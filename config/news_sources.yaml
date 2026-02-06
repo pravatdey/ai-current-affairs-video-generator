@@ -1,0 +1,287 @@
+# News Sources Configuration
+# Supports RSS feeds and web scraping
+
+# Indian News Sources
+indian_sources:
+  # Times of India
+  - name: "Times of India"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "https://timesofindia.indiatimes.com/rssfeedstopstories.cms"
+    priority: 1
+
+  - name: "Times of India - India"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "india"
+    url: "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms"
+    priority: 1
+
+  # The Hindu
+  - name: "The Hindu"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "https://www.thehindu.com/feeder/default.rss"
+    priority: 1
+
+  - name: "The Hindu - National"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "india"
+    url: "https://www.thehindu.com/news/national/feeder/default.rss"
+    priority: 1
+
+  # NDTV
+  - name: "NDTV - Top Stories"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "https://feeds.feedburner.com/ndtvnews-top-stories"
+    priority: 1
+
+  - name: "NDTV - India"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "india"
+    url: "https://feeds.feedburner.com/ndtvnews-india-news"
+    priority: 1
+
+  # Indian Express
+  - name: "Indian Express"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "https://indianexpress.com/feed/"
+    priority: 2
+
+  # Hindustan Times
+  - name: "Hindustan Times"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml"
+    priority: 2
+
+  # PIB (Press Information Bureau) - Government news
+  - name: "PIB India"
+    type: "web"
+    enabled: true
+    language: "en"
+    category: "government"
+    url: "https://pib.gov.in/allRel.aspx"
+    selectors:
+      articles: ".content_items .content_wrapper"
+      title: "h3 a"
+      link: "h3 a"
+      date: ".date"
+      summary: ".content_discription"
+    priority: 1
+
+  # Zee News Hindi
+  - name: "Zee News Hindi"
+    type: "rss"
+    enabled: true
+    language: "hi"
+    category: "general"
+    url: "https://zeenews.india.com/hindi/rss/india-news.xml"
+    priority: 2
+
+  # Aaj Tak Hindi
+  - name: "Aaj Tak"
+    type: "rss"
+    enabled: true
+    language: "hi"
+    category: "general"
+    url: "https://www.aajtak.in/rss/india.xml"
+    priority: 2
+
+# International News Sources
+international_sources:
+  # BBC News
+  - name: "BBC News - World"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "world"
+    url: "http://feeds.bbci.co.uk/news/world/rss.xml"
+    priority: 1
+
+  - name: "BBC News - Asia"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "asia"
+    url: "http://feeds.bbci.co.uk/news/world/asia/rss.xml"
+    priority: 1
+
+  # Reuters
+  - name: "Reuters - World"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "world"
+    url: "https://www.reutersagency.com/feed/?best-topics=world&post_type=best"
+    priority: 1
+
+  # CNN
+  - name: "CNN - Top Stories"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "http://rss.cnn.com/rss/edition.rss"
+    priority: 2
+
+  - name: "CNN - World"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "world"
+    url: "http://rss.cnn.com/rss/edition_world.rss"
+    priority: 2
+
+  # Al Jazeera
+  - name: "Al Jazeera"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "world"
+    url: "https://www.aljazeera.com/xml/rss/all.xml"
+    priority: 2
+
+  # The Guardian
+  - name: "The Guardian - World"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "world"
+    url: "https://www.theguardian.com/world/rss"
+    priority: 2
+
+  # AP News
+  - name: "AP News"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "general"
+    url: "https://rsshub.app/apnews/topics/apf-topnews"
+    priority: 1
+
+# Category-specific Sources (Sports, Business, Tech, etc.)
+category_sources:
+  # Sports
+  - name: "ESPN Cricket"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "sports"
+    url: "https://www.espncricinfo.com/rss/content/story/feeds/0.xml"
+    priority: 3
+
+  # Business
+  - name: "Economic Times"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "business"
+    url: "https://economictimes.indiatimes.com/rssfeedstopstories.cms"
+    priority: 2
+
+  - name: "Moneycontrol"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "business"
+    url: "https://www.moneycontrol.com/rss/latestnews.xml"
+    priority: 2
+
+  # Technology
+  - name: "TechCrunch"
+    type: "rss"
+    enabled: true
+    language: "en"
+    category: "technology"
+    url: "https://techcrunch.com/feed/"
+    priority: 3
+
+# Source Categories Configuration
+categories:
+  general:
+    weight: 1.0
+    max_articles: 5
+  india:
+    weight: 1.0
+    max_articles: 4
+  world:
+    weight: 0.8
+    max_articles: 3
+  government:
+    weight: 0.9
+    max_articles: 2
+  business:
+    weight: 0.6
+    max_articles: 2
+  sports:
+    weight: 0.4
+    max_articles: 1
+  technology:
+    weight: 0.4
+    max_articles: 1
+
+# Scraping Rules
+rules:
+  # Minimum article age (don't scrape very old articles)
+  max_age_hours: 48
+
+  # Content filtering
+  min_content_length: 200
+  max_content_length: 10000
+
+  # Deduplication
+  similarity_threshold: 0.8  # 0-1, higher = more strict
+
+  # Request settings
+  request_timeout: 30
+  max_retries: 3
+  retry_delay: 5
+
+  # Rate limiting (requests per minute per domain)
+  rate_limit: 10
+
+  # User agents (rotated)
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Keywords for filtering (articles must contain at least one)
+keywords:
+  include:
+    - "india"
+    - "government"
+    - "minister"
+    - "parliament"
+    - "economy"
+    - "election"
+    - "supreme court"
+    - "policy"
+    - "development"
+    - "international"
+    - "world"
+    - "breaking"
+
+  exclude:
+    - "sponsored"
+    - "advertisement"
+    - "partner content"
+    - "paid content"

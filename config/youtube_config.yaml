@@ -1,0 +1,245 @@
+# YouTube Configuration
+
+# OAuth2 Credentials
+# Get these from Google Cloud Console: https://console.cloud.google.com/
+# 1. Create a project
+# 2. Enable YouTube Data API v3
+# 3. Create OAuth 2.0 credentials (Desktop app)
+# 4. Download the credentials JSON
+
+credentials:
+  # Path to OAuth2 client secrets file
+  client_secrets_file: "config/client_secrets.json"
+
+  # Path to store OAuth2 tokens (auto-generated after first auth)
+  token_file: "config/youtube_token.json"
+
+  # Scopes required for uploading
+  scopes:
+    - "https://www.googleapis.com/auth/youtube.upload"
+    - "https://www.googleapis.com/auth/youtube"
+    - "https://www.googleapis.com/auth/youtube.force-ssl"
+
+# Channel Settings
+channel:
+  # Your YouTube channel ID (optional, auto-detected from auth)
+  id: ""
+
+  # Default upload settings
+  defaults:
+    privacy_status: "public"     # public, private, unlisted
+    category_id: "27"            # Education (better for UPSC content)
+    license: "youtube"           # youtube or creativeCommon
+    embeddable: true
+    public_stats_viewable: true
+    made_for_kids: false
+    self_declared_made_for_kids: false
+
+# Video Metadata Templates - UPSC/Competitive Exam Focused
+# Available placeholders: {date}, {language}, {topics}, {sources}, {topic_tags}
+metadata:
+  # Title templates per language - UPSC optimized
+  titles:
+    en: "UPSC Current Affairs {date} | Daily News for IAS/IPS | Prelims & Mains"
+    hi: "UPSC Current Affairs {date} | IAS \u0915\u0947 \u0932\u093f\u090f \u0926\u0948\u0928\u093f\u0915 \u0928\u094d\u092f\u0942\u091c\u093c | Prelims Mains"
+
+  # Description template - UPSC focused with timestamps
+  description: |
+    UPSC Daily Current Affairs for {date}
+    Language: {language}
+
+    ===========================================
+    FOR UPSC CSE ASPIRANTS (Prelims + Mains)
+    ===========================================
+
+    Comprehensive current affairs coverage for:
+    - UPSC Civil Services (IAS/IPS/IFS)
+    - State PCS Examinations
+    - SSC, Banking, Railways
+    - All Competitive Exams
+
+    ===========================================
+    TOPICS COVERED:
+    ===========================================
+    {topics}
+
+    ===========================================
+    PDF STUDY NOTES
+    ===========================================
+    Download PDF notes from the pinned comment below!
+    Notes include:
+    - Key points for quick revision
+    - Prelims MCQ focus areas
+    - Mains answer writing angles
+    - Important dates & statistics
+
+    ===========================================
+    EXAM RELEVANCE:
+    ===========================================
+    - GS Paper 1: History, Geography, Society
+    - GS Paper 2: Polity, IR, Governance
+    - GS Paper 3: Economy, Environment, S&T
+    - GS Paper 4: Ethics
+
+    ===========================================
+    SUBSCRIBE FOR DAILY UPDATES!
+    ===========================================
+    New video every day at 11:00 AM IST
+    Turn on notifications (Bell Icon)
+
+    #UPSC #CurrentAffairs #IAS #CivilServices #Prelims2025 #Mains2025 #DailyNews #UPSCPreparation {topic_tags}
+
+    ---
+    News Sources: {sources}
+
+  # Default tags - UPSC focused
+  tags:
+    - "UPSC"
+    - "UPSC current affairs"
+    - "UPSC 2025"
+    - "IAS preparation"
+    - "civil services"
+    - "current affairs today"
+    - "daily current affairs"
+    - "UPSC prelims"
+    - "UPSC mains"
+    - "IAS IPS preparation"
+    - "current affairs for UPSC"
+    - "UPSC news"
+    - "competitive exam"
+    - "GK today"
+    - "current affairs in english"
+
+  # Language-specific tags
+  language_tags:
+    en:
+      - "UPSC english"
+      - "current affairs english"
+      - "IAS english medium"
+      - "UPSC preparation english"
+    hi:
+      - "UPSC hindi"
+      - "current affairs hindi"
+      - "IAS hindi medium"
+      - "\u0939\u093f\u0902\u0926\u0940 \u0915\u0930\u0902\u091f \u0905\u092b\u0947\u092f\u0930\u094d\u0938"
+
+# Upload Settings
+upload:
+  # Retry settings
+  max_retries: 3
+  retry_delay: 60          # Seconds between retries
+
+  # Chunk size for resumable uploads (in bytes)
+  # Larger = faster, but more memory
+  chunk_size: 10485760     # 10MB
+
+  # Timeout for upload operations
+  timeout: 3600            # 1 hour
+
+  # Rate limiting
+  uploads_per_day: 5       # Maximum uploads per day
+  min_upload_interval: 3600  # Minimum seconds between uploads
+
+# Thumbnail Settings
+thumbnail:
+  # Auto-set custom thumbnail after upload
+  auto_set: true
+
+  # Max file size (YouTube limit is 2MB)
+  max_size_mb: 2
+
+# Playlist Settings - UPSC Organized
+playlists:
+  # Auto-add to playlists based on content
+  auto_add: true
+
+  # Create playlist if doesn't exist
+  auto_create: true
+
+  # Playlist mappings (category -> playlist name) - UPSC subject wise
+  mappings:
+    general: "UPSC Daily Current Affairs 2025"
+    polity: "UPSC Polity & Governance"
+    economy: "UPSC Economy & Finance"
+    international: "UPSC International Relations"
+    environment: "UPSC Environment & Ecology"
+    science: "UPSC Science & Technology"
+    social: "UPSC Social Issues"
+    security: "UPSC Internal Security"
+
+  # Language-specific playlists
+  language_playlists:
+    en: "UPSC Current Affairs - English"
+    hi: "UPSC Current Affairs - Hindi"
+
+# Scheduling
+scheduling:
+  # Schedule video for later (instead of immediate publish)
+  enabled: false
+
+  # Time to publish (24-hour format, in channel's timezone)
+  publish_time: "08:00"
+
+  # Days to schedule ahead
+  days_ahead: 0
+
+# Analytics (optional - for tracking)
+analytics:
+  # Enable analytics tracking
+  enabled: false
+
+  # Track these metrics after upload
+  track:
+    - "views"
+    - "likes"
+    - "comments"
+
+  # How often to check (hours)
+  check_interval: 24
+
+# Notifications
+notifications:
+  # Send notification after successful upload
+  on_success: true
+
+  # Send notification on failure
+  on_failure: true
+
+  # Notification methods
+  methods:
+    - type: "log"
+      enabled: true
+
+    # Telegram notification (optional)
+    - type: "telegram"
+      enabled: false
+      bot_token: ""
+      chat_id: ""
+
+    # Email notification (optional)
+    - type: "email"
+      enabled: false
+      smtp_server: ""
+      smtp_port: 587
+      username: ""
+      password: ""
+      to_address: ""
+
+# YouTube Category IDs Reference
+# 1  - Film & Animation
+# 2  - Autos & Vehicles
+# 10 - Music
+# 15 - Pets & Animals
+# 17 - Sports
+# 18 - Short Movies
+# 19 - Travel & Events
+# 20 - Gaming
+# 21 - Videoblogging
+# 22 - People & Blogs
+# 23 - Comedy
+# 24 - Entertainment
+# 25 - News & Politics
+# 26 - Howto & Style
+# 27 - Education
+# 28 - Science & Technology
+# 29 - Nonprofits & Activism

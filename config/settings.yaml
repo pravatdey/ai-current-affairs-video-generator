@@ -1,0 +1,243 @@
+# AI Current Affairs Video Generator - Main Configuration
+
+# Application Settings
+app:
+  name: "AI Current Affairs"
+  version: "1.0.0"
+  debug: false
+  log_level: "INFO"
+
+# Video Settings
+video:
+  duration_min: 5          # Minimum video duration in minutes
+  duration_max: 15         # Maximum video duration in minutes
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  format: "mp4"
+  codec: "libx264"
+  bitrate: "5000k"
+
+# Language Configuration
+languages:
+  default: "en"
+  supported:
+    - code: "en"
+      name: "English"
+      tts_voice: "en-US-GuyNeural"
+      tts_rate: "+0%"
+      tts_pitch: "+0Hz"
+    - code: "hi"
+      name: "Hindi"
+      tts_voice: "hi-IN-MadhurNeural"
+      tts_rate: "+0%"
+      tts_pitch: "+0Hz"
+    - code: "ta"
+      name: "Tamil"
+      tts_voice: "ta-IN-ValluvarNeural"
+      tts_rate: "+0%"
+      tts_pitch: "+0Hz"
+    - code: "te"
+      name: "Telugu"
+      tts_voice: "te-IN-ShrutiNeural"
+      tts_rate: "+0%"
+      tts_pitch: "+0Hz"
+
+# LLM Configuration
+llm:
+  provider: "groq"         # Options: "ollama", "groq"
+
+  # Ollama settings (local LLM)
+  ollama:
+    host: "http://localhost:11434"
+    model: "llama2"
+    temperature: 0.7
+    max_tokens: 4000
+
+  # Groq settings (free cloud LLM)
+  groq:
+    api_key: ""            # Set via environment variable GROQ_API_KEY
+    model: "llama-3.3-70b-versatile"
+    temperature: 0.7
+    max_tokens: 4000
+
+# Text-to-Speech Configuration
+tts:
+  provider: "edge"         # Options: "edge", "coqui"
+  output_format: "mp3"
+
+  # Edge TTS settings
+  edge:
+    rate: "+0%"
+    pitch: "+0Hz"
+    volume: "+0%"
+
+  # Audio post-processing
+  audio:
+    normalize: true
+    noise_reduction: false
+    target_loudness: -16   # LUFS
+
+# Avatar Configuration
+avatar:
+  provider: "sadtalker"    # Options: "sadtalker", "wav2lip"
+
+  # Default avatar image (place in assets/avatars/)
+  default_image: "news_anchor.png"
+
+  # SadTalker settings
+  sadtalker:
+    preprocess: "crop"     # Options: "crop", "resize", "full"
+    still_mode: false
+    use_enhancer: false    # Enable for better quality (slower)
+    batch_size: 2
+    expression_scale: 1.0
+
+  # Wav2Lip settings
+  wav2lip:
+    resize_factor: 1
+    nosmooth: false
+    pads: [0, 10, 0, 0]    # [top, bottom, left, right]
+
+# Video Composition
+composition:
+  # Background
+  background:
+    type: "solid"          # Options: "solid", "image", "video"
+    color: "#1a1a2e"       # For solid background
+    image: ""              # Path to background image
+    video: ""              # Path to background video
+
+  # Avatar position
+  avatar:
+    position: "center"     # Options: "left", "center", "right"
+    scale: 0.8             # Scale factor for avatar
+    x_offset: 0
+    y_offset: 50
+
+  # Text overlays
+  text:
+    headline:
+      enabled: true
+      position: "bottom"
+      font: "Arial-Bold"
+      size: 48
+      color: "#ffffff"
+      background: "#000000cc"
+      padding: 20
+
+    ticker:
+      enabled: true
+      position: "bottom"
+      font: "Arial"
+      size: 32
+      color: "#ffffff"
+      background: "#c41e3a"
+      speed: 100           # Pixels per second
+
+  # Intro/Outro
+  intro:
+    enabled: true
+    duration: 3            # Seconds
+    text: "Daily Current Affairs"
+    animation: "fade"
+
+  outro:
+    enabled: true
+    duration: 5
+    text: "Subscribe for daily updates!"
+    animation: "fade"
+
+  # Background music
+  music:
+    enabled: true
+    file: "background_news.mp3"
+    volume: 0.1            # 0.0 to 1.0
+
+# Thumbnail Settings
+thumbnail:
+  width: 1280
+  height: 720
+  format: "png"
+
+  # Text settings
+  text:
+    enabled: true
+    max_chars: 50
+    font: "Arial-Bold"
+    size: 72
+    color: "#ffffff"
+    stroke_color: "#000000"
+    stroke_width: 3
+
+  # Effects
+  effects:
+    gradient_overlay: true
+    vignette: true
+
+# YouTube Settings
+youtube:
+  # Upload settings
+  upload:
+    privacy_status: "public"  # Options: "public", "private", "unlisted"
+    category_id: "25"         # News & Politics
+    default_language: "en"
+    made_for_kids: false
+
+  # Metadata templates
+  metadata:
+    title_template: "{date} - Daily Current Affairs | {language}"
+    description_template: |
+      Daily Current Affairs for {date}
+
+      Topics covered:
+      {topics}
+
+      Sources:
+      {sources}
+
+      #CurrentAffairs #DailyNews #NewsUpdate #{language}News
+
+    default_tags:
+      - "current affairs"
+      - "daily news"
+      - "news update"
+      - "today's news"
+
+# Scheduling
+schedule:
+  enabled: true
+  time: "06:00"            # 24-hour format
+  timezone: "Asia/Kolkata"
+  days:                    # Days to run (0=Monday, 6=Sunday)
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+
+# Database
+database:
+  type: "sqlite"
+  path: "data/news_tracker.db"
+
+# Output Paths
+paths:
+  output: "output"
+  audio: "output/audio"
+  videos: "output/videos"
+  thumbnails: "output/thumbnails"
+  temp: "output/temp"
+  logs: "logs"
+
+# News Scraping
+scraping:
+  max_articles_per_source: 10
+  max_age_hours: 24        # Only get news from last 24 hours
+  min_content_length: 100  # Minimum article content length
+  request_timeout: 30      # Seconds
+  request_delay: 1         # Delay between requests (be nice to servers)
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"

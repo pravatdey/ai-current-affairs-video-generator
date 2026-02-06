@@ -1,0 +1,117 @@
+name: Daily Current Affairs Video Generator
+
+on:
+  # Run daily at 10:00 AM IST (4:30 AM UTC)
+  schedule:
+    - cron: '30 4 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      language:
+        description: 'Video language'
+        required: false
+        default: 'en'
+        type: choice
+        options:
+          - en
+          - hi
+          - ta
+          - te
+      upload:
+        description: 'Upload to YouTube'
+        required: false
+        default: true
+        type: boolean
+      test_mode:
+        description: 'Test mode (upload as private)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libsndfile1 imagemagick
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create necessary directories
+        run: |
+          mkdir -p output/audio output/videos output/thumbnails
+          mkdir -p data logs config
+
+      - name: Setup environment file
+        run: |
+          echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" > .env
+          echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
+          echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> .env
+
+      - name: Setup YouTube credentials
+        if: ${{ github.event.inputs.upload != 'false' }}
+        run: |
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
+          echo '${{ secrets.YOUTUBE_TOKEN }}' > config/token.json
+        continue-on-error: true
+
+      - name: Run video generation pipeline
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python main.py \
+            --language ${{ github.event.inputs.language || 'en' }} \
+            ${{ github.event.inputs.upload == 'false' && '--no-upload' || '' }} \
+            ${{ github.event.inputs.test_mode == 'true' && '--test' || '' }}
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: generated-video-${{ github.run_number }}
+          path: |
+            output/videos/*.mp4
+            output/thumbnails/*.png
+            output/*_script.txt
+            logs/*.log
+          retention-days: 7
+
+      - name: Send Telegram notification on success
+        if: success() && env.TELEGRAM_BOT_TOKEN != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="✅ Daily video generated successfully! Run #${{ github.run_number }}"
+
+      - name: Send Telegram notification on failure
+        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="❌ Daily video generation failed! Run #${{ github.run_number }}"
