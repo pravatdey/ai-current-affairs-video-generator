@@ -233,10 +233,11 @@ class ScriptWriter:
         script.prelims_topics = prelims_topics
         script.mains_topics = mains_topics
 
-        # Calculate words per news item (more words per item for depth)
-        # For 25 min video with 8-10 articles, each topic gets ~400-500 words
-        min_words_per_item = 350  # Minimum for proper UPSC coverage
-        words_per_item = max(int(self.news_words / len(articles)), min_words_per_item)
+        # Calculate words per news item (adjusted for 15-min video)
+        # For 15 min video with 4 articles, each topic gets ~300-350 words
+        min_words_per_item = 280  # Adjusted for 15-minute video
+        max_words_per_item = 350  # Hard cap per article
+        words_per_item = min(max(int(self.news_words / len(articles)), min_words_per_item), max_words_per_item)
 
         # Track cumulative time for timestamps
         cumulative_time = 0.0
