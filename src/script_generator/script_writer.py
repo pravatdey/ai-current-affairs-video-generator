@@ -122,7 +122,7 @@ class ScriptWriter:
         self,
         llm_provider: str = "groq",
         llm_config: Dict[str, Any] = None,
-        target_duration_minutes: int = 25,  # Default 25 minutes for UPSC
+        target_duration_minutes: int = 15,  # Default 15 minutes max
         upsc_mode: bool = True
     ):
         """
@@ -131,18 +131,18 @@ class ScriptWriter:
         Args:
             llm_provider: LLM provider to use ("groq" or "ollama")
             llm_config: Configuration for LLM client
-            target_duration_minutes: Target video duration (default 25 min for UPSC)
+            target_duration_minutes: Target video duration (default 15 min max)
             upsc_mode: Enable UPSC-specific content generation
         """
         llm_config = llm_config or {}
         self.llm = LLMClient(provider=llm_provider, **llm_config)
-        self.target_duration = max(target_duration_minutes, 25)  # Minimum 25 minutes
+        self.target_duration = min(target_duration_minutes, 15)  # Maximum 15 minutes
         self.upsc_mode = upsc_mode
 
         # Use UPSC-specific system prompt
         self.system_prompt = PromptTemplates.SYSTEM_PROMPT
 
-        # Calculate word targets for 25+ minute educational content
+        # Calculate word targets for educational content (max 15 minutes)
         self.target_words = self.target_duration * self.WORDS_PER_MINUTE
 
         # Adjusted distribution for educational content
