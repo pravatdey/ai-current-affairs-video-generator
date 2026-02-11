@@ -240,20 +240,26 @@ class VideoComposer:
             logger.info(f"Exporting video to: {output_path}")
 
             # Build ffmpeg parameters for faster encoding
+            preset = self.video_config.get("preset", "medium")
+            threads = self.video_config.get("threads", 4)
+            bitrate = self.video_config.get("bitrate", "5000k")
+
             ffmpeg_params = [
-                '-preset', self.video_config.get("preset", "medium"),
-                '-threads', str(self.video_config.get("threads", 4))
+                '-preset', preset,
+                '-threads', str(threads)
             ]
+
+            logger.info(f"Export settings: preset={preset}, threads={threads}, bitrate={bitrate}, resolution={self.resolution}")
 
             final_video.write_videofile(
                 str(output_path),
                 fps=self.fps,
                 codec='libx264',
                 audio_codec='aac',
-                bitrate=self.video_config.get("bitrate", "5000k"),
+                bitrate=bitrate,
                 ffmpeg_params=ffmpeg_params,
-                verbose=False,
-                logger=None
+                verbose=True,
+                logger='bar'
             )
 
             final_duration = final_video.duration
