@@ -12,14 +12,14 @@ video:
   duration_min: 5          # Minimum video duration in minutes
   duration_max: 15         # Maximum video duration in minutes
   resolution:
-    width: 1920
-    height: 1080
+    width: 1280
+    height: 720
   fps: 30
   format: "mp4"
   codec: "libx264"
-  bitrate: "2500k"         # Reduced for faster encoding (still good quality)
-  preset: "faster"         # Options: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
-  threads: 4               # Number of CPU threads for encoding
+  bitrate: "1500k"         # Optimized for fast encoding (good quality for YouTube)
+  preset: "ultrafast"      # Options: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+  threads: 8               # Number of CPU threads for encoding
 
 # Language Configuration
 languages:
