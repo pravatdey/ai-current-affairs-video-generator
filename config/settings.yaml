@@ -17,7 +17,9 @@ video:
   fps: 30
   format: "mp4"
   codec: "libx264"
-  bitrate: "5000k"
+  bitrate: "2500k"         # Reduced for faster encoding (still good quality)
+  preset: "faster"         # Options: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+  threads: 4               # Number of CPU threads for encoding
 
 # Language Configuration
 languages:

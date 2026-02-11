@@ -245,6 +245,8 @@ class VideoComposer:
                 codec='libx264',
                 audio_codec='aac',
                 bitrate=self.video_config.get("bitrate", "5000k"),
+                preset=self.video_config.get("preset", "medium"),
+                threads=self.video_config.get("threads", 4),
                 verbose=False,
                 logger=None
             )
