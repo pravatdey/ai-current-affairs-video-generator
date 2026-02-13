@@ -72,8 +72,8 @@ jobs:
         if: ${{ github.event.inputs.upload != 'false' }}
         run: |
           echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
-          echo '${{ secrets.YOUTUBE_TOKEN }}' > config/token.json
-        continue-on-error: true
+          echo '${{ secrets.YOUTUBE_TOKEN }}' > config/youtube_token.json
+        continue-on-error: false
 
       - name: Run video generation pipeline
         env:

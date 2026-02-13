@@ -74,39 +74,59 @@ class YouTubeAuth:
 
             if self.credentials and self.credentials.expired and self.credentials.refresh_token:
                 logger.info("Refreshing expired credentials")
-                self.credentials.refresh(Request())
-                self._save_credentials()
-                return self._build_service()
+                try:
+                    self.credentials.refresh(Request())
+                    self._save_credentials()
+                    logger.info("Credentials refreshed successfully")
+                    return self._build_service()
+                except Exception as refresh_error:
+                    logger.error(f"Failed to refresh credentials: {refresh_error}")
+                    # Token might be revoked, need new authentication
+                    logger.warning("Token refresh failed, need new authentication")
 
             # Need new authentication
             logger.info("Starting new OAuth2 authentication flow")
             return self._new_authentication()
 
         except Exception as e:
-            logger.error(f"Authentication failed: {e}")
+            logger.error(f"Authentication failed: {e}", exc_info=True)
             return False
 
     def _load_credentials(self) -> Optional[Credentials]:
         """Load credentials from token file"""
         token_path = Path(self.token_file)
 
-        if token_path.exists():
-            try:
-                with open(token_path, "r") as f:
-                    token_data = json.load(f)
+        if not token_path.exists():
+            logger.info(f"Token file not found: {self.token_file}")
+            return None
 
-                return Credentials(
-                    token=token_data.get("token"),
-                    refresh_token=token_data.get("refresh_token"),
-                    token_uri=token_data.get("token_uri"),
-                    client_id=token_data.get("client_id"),
-                    client_secret=token_data.get("client_secret"),
-                    scopes=token_data.get("scopes")
-                )
-            except Exception as e:
-                logger.warning(f"Failed to load token: {e}")
+        try:
+            with open(token_path, "r") as f:
+                token_data = json.load(f)
 
-        return None
+            # Validate required fields
+            required_fields = ["token", "refresh_token", "token_uri", "client_id", "client_secret"]
+            missing_fields = [field for field in required_fields if not token_data.get(field)]
+
+            if missing_fields:
+                logger.warning(f"Token file missing required fields: {missing_fields}")
+                return None
+
+            logger.info(f"Successfully loaded credentials from: {self.token_file}")
+            return Credentials(
+                token=token_data.get("token"),
+                refresh_token=token_data.get("refresh_token"),
+                token_uri=token_data.get("token_uri"),
+                client_id=token_data.get("client_id"),
+                client_secret=token_data.get("client_secret"),
+                scopes=token_data.get("scopes")
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in token file: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to load token: {e}")
+            return None
 
     def _save_credentials(self) -> None:
         """Save credentials to token file"""
@@ -129,6 +149,19 @@ class YouTubeAuth:
 
     def _new_authentication(self) -> bool:
         """Run new OAuth2 authentication flow"""
+        # Check if running in CI/headless environment
+        is_ci = os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')
+
+        if is_ci:
+            logger.error(
+                "Cannot run OAuth flow in CI environment (no browser available).\n"
+                "Please ensure you have:\n"
+                "1. Run authentication locally first to generate token\n"
+                "2. Added the token as YOUTUBE_TOKEN secret in GitHub\n"
+                "3. Added client_secrets.json as YOUTUBE_CLIENT_SECRETS secret"
+            )
+            return False
+
         secrets_path = Path(self.client_secrets_file)
 
         if not secrets_path.exists():
