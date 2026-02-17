@@ -15,6 +15,7 @@ from googleapiclient.errors import HttpError
 
 from .auth import YouTubeAuth
 from .metadata import MetadataGenerator
+from .drive_uploader import DriveUploader
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,6 +64,7 @@ class YouTubeUploader:
         """
         self.auth = auth or YouTubeAuth()
         self.metadata_gen = metadata_generator or MetadataGenerator()
+        self.drive_uploader = DriveUploader(auth=self.auth)
 
         logger.info("YouTubeUploader initialized")
 
@@ -272,10 +274,13 @@ class YouTubeUploader:
         language: str = "en",
         date: str = None,
         thumbnail_path: str = None,
-        privacy_status: str = "public"
+        privacy_status: str = "public",
+        pdf_path: str = None
     ) -> UploadResult:
         """
         Upload video with auto-generated metadata.
+        If pdf_path is provided, uploads PDF to Google Drive and includes the
+        download link in the video description.
 
         Args:
             video_path: Path to video file
@@ -285,16 +290,34 @@ class YouTubeUploader:
             date: Video date
             thumbnail_path: Path to thumbnail
             privacy_status: Privacy status
+            pdf_path: Path to PDF study notes file (optional)
 
         Returns:
             UploadResult object
         """
-        # Generate metadata
+        # Upload PDF to Google Drive and get shareable link
+        pdf_link = None
+        pdf_filename = None
+
+        if pdf_path:
+            from pathlib import Path as _Path
+            pdf_filename = _Path(pdf_path).name
+            logger.info(f"Uploading PDF study notes to Google Drive: {pdf_filename}")
+            pdf_link = self.drive_uploader.upload_pdf(pdf_path, date_str=date)
+
+            if pdf_link:
+                logger.info(f"PDF uploaded to Drive: {pdf_link}")
+            else:
+                logger.info("Drive upload unavailable - PDF filename will be noted in description")
+
+        # Generate metadata with PDF link
         metadata = self.metadata_gen.generate(
             headlines=headlines,
             date=date,
             language=language,
-            sources=sources
+            sources=sources,
+            pdf_link=pdf_link,
+            pdf_filename=pdf_filename
         )
 
         return self.upload(

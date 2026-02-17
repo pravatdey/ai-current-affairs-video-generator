@@ -134,6 +134,9 @@ class VideoGenerationPipeline:
             "errors": []
         }
 
+        # Will be set after video composition if PDF notes are generated
+        pdf_notes_path = None
+
         try:
             # Step 1: Scrape news
             self.logger.info("Step 1: Scraping news...")
@@ -242,9 +245,15 @@ class VideoGenerationPipeline:
             results["steps"]["composition"] = {
                 "duration": composition_result.duration,
                 "path": str(final_video_path),
-                "resolution": composition_result.resolution
+                "resolution": composition_result.resolution,
+                "pdf_notes": composition_result.pdf_notes_path or ""
             }
             self.logger.info(f"Video composed: {composition_result.duration:.1f}s")
+
+            # Track PDF path for upload step
+            pdf_notes_path = composition_result.pdf_notes_path
+            if pdf_notes_path:
+                self.logger.info(f"PDF study notes generated: {pdf_notes_path}")
 
             # Step 6: Generate thumbnail
             self.logger.info("Step 6: Generating thumbnail...")
@@ -263,7 +272,7 @@ class VideoGenerationPipeline:
 
             # Step 7: Upload to YouTube (if enabled)
             if upload:
-                self.logger.info("Step 7: Uploading to YouTube...")
+                self.logger.info("Step 7: Uploading to YouTube (with PDF study notes)...")
                 sources = list(set([a.source for a in video_articles]))
 
                 upload_result = self.youtube_uploader.upload_with_metadata(
@@ -273,18 +282,22 @@ class VideoGenerationPipeline:
                     language=language,
                     date=script.date,
                     thumbnail_path=str(thumbnail_path) if thumbnail_result.success else None,
-                    privacy_status="private" if test_mode else "public"
+                    privacy_status="private" if test_mode else "public",
+                    pdf_path=pdf_notes_path
                 )
 
                 results["steps"]["upload"] = {
                     "success": upload_result.success,
                     "video_id": upload_result.video_id,
                     "url": upload_result.video_url,
+                    "pdf_notes": pdf_notes_path or "",
                     "error": upload_result.error
                 }
 
                 if upload_result.success:
                     self.logger.info(f"Uploaded to YouTube: {upload_result.video_url}")
+                    if pdf_notes_path:
+                        self.logger.info(f"PDF study notes linked in description: {pdf_notes_path}")
 
                     # Mark articles as used
                     article_ids = [a.id for a in video_articles if hasattr(a, 'id')]
@@ -402,6 +415,9 @@ Examples:
 
         if results["steps"].get("upload", {}).get("url"):
             print(f"\nVideo URL: {results['steps']['upload']['url']}")
+
+        if results["steps"].get("composition", {}).get("pdf_notes"):
+            print(f"PDF Notes: {results['steps']['composition']['pdf_notes']}")
 
     else:
         print("Status: FAILED\n")

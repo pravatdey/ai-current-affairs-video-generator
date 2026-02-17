@@ -3,5 +3,6 @@
 from .auth import YouTubeAuth
 from .uploader import YouTubeUploader
 from .metadata import MetadataGenerator
+from .drive_uploader import DriveUploader
 
-__all__ = ["YouTubeAuth", "YouTubeUploader", "MetadataGenerator"]
+__all__ = ["YouTubeAuth", "YouTubeUploader", "MetadataGenerator", "DriveUploader"]

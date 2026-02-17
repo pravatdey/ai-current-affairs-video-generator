@@ -48,7 +48,9 @@ class MetadataGenerator:
         date: str = None,
         language: str = "en",
         sources: List[str] = None,
-        custom_tags: List[str] = None
+        custom_tags: List[str] = None,
+        pdf_link: str = None,
+        pdf_filename: str = None
     ) -> Dict[str, Any]:
         """
         Generate complete metadata for a video.
@@ -59,6 +61,8 @@ class MetadataGenerator:
             language: Language code
             sources: List of news sources used
             custom_tags: Additional custom tags
+            pdf_link: Google Drive shareable link for the PDF study notes
+            pdf_filename: Local filename of the PDF (fallback if no Drive link)
 
         Returns:
             Dictionary with title, description, tags, category
@@ -79,12 +83,14 @@ class MetadataGenerator:
         # Generate title
         title = self._generate_title(date, language_name, headlines)
 
-        # Generate description
+        # Generate description (with PDF section)
         description = self._generate_description(
             date=date,
             language=language_name,
             headlines=headlines,
-            sources=sources
+            sources=sources,
+            pdf_link=pdf_link,
+            pdf_filename=pdf_filename
         )
 
         # Generate tags
@@ -138,9 +144,11 @@ class MetadataGenerator:
         date: str,
         language: str,
         headlines: List[str],
-        sources: List[str]
+        sources: List[str],
+        pdf_link: str = None,
+        pdf_filename: str = None
     ) -> str:
-        """Generate detailed description"""
+        """Generate detailed description with PDF download section."""
         metadata_config = self.config.get("metadata", {})
         template = metadata_config.get("description", "")
 
@@ -153,6 +161,9 @@ class MetadataGenerator:
         # Generate topic tags
         topic_tags = self._extract_topic_tags(headlines)
 
+        # Build PDF section
+        pdf_section = self._build_pdf_section(pdf_link, pdf_filename)
+
         if template:
             description = template.format(
                 date=date,
@@ -161,20 +172,24 @@ class MetadataGenerator:
                 sources=sources_list,
                 topic_tags=" ".join(topic_tags)
             )
+            # Append PDF section after template content
+            description = description.rstrip() + "\n\n" + pdf_section
         else:
             # Default description
-            description = f"""Daily Current Affairs for {date}
+            description = f"""Daily Current Affairs for {date} | Current Affairs Academy
 Language: {language}
 
-Topics Covered:
+📌 Topics Covered Today:
 {topics_list}
 
-News Sources:
+{pdf_section}
+📰 News Sources:
 {sources_list}
 
-Subscribe for daily updates!
+🔔 Subscribe for daily current affairs updates!
+📚 Like & Share to help fellow aspirants!
 
-#CurrentAffairs #DailyNews #TodayNews
+#CurrentAffairs #DailyNews #UPSC #CurrentAffairsAcademy #StudyNotes
 """
 
         # YouTube description limit is 5000 chars
@@ -182,6 +197,42 @@ Subscribe for daily updates!
             description = description[:4997] + "..."
 
         return description
+
+    def _build_pdf_section(
+        self,
+        pdf_link: str = None,
+        pdf_filename: str = None
+    ) -> str:
+        """Build the PDF study notes section for video description."""
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            "📄 FREE PDF STUDY NOTES - CURRENT AFFAIRS ACADEMY",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            "",
+            "Download the Complete Study Notes PDF for this video:",
+            "✅ Full detailed coverage (much more than the video!)",
+            "✅ In-depth analysis with background & context",
+            "✅ Important Terms & Definitions",
+            "✅ UPSC Prelims & Mains relevance tags",
+            "✅ Quick Revision section with key facts",
+            "✅ 20+ Practice Questions (MCQ + Descriptive)",
+            "",
+        ]
+
+        if pdf_link:
+            lines.append(f"🔗 Download PDF: {pdf_link}")
+        elif pdf_filename:
+            lines.append("🔗 PDF Study Notes: Check the pinned comment for download link")
+        else:
+            lines.append("🔗 PDF Study Notes: Available - check pinned comment!")
+
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            "",
+        ])
+
+        return "\n".join(lines)
 
     def _generate_tags(
         self,
@@ -279,7 +330,9 @@ Subscribe for daily updates!
         script_date: str,
         script_language: str,
         article_titles: List[str],
-        article_sources: List[str]
+        article_sources: List[str],
+        pdf_link: str = None,
+        pdf_filename: str = None
     ) -> Dict[str, Any]:
         """
         Generate metadata from script information.
@@ -290,6 +343,8 @@ Subscribe for daily updates!
             script_language: Script language
             article_titles: List of article titles
             article_sources: List of article sources
+            pdf_link: Google Drive link to PDF study notes
+            pdf_filename: Local filename of the PDF
 
         Returns:
             Metadata dictionary
@@ -298,7 +353,9 @@ Subscribe for daily updates!
             headlines=article_titles,
             date=script_date,
             language=script_language,
-            sources=article_sources
+            sources=article_sources,
+            pdf_link=pdf_link,
+            pdf_filename=pdf_filename
         )
 
 
