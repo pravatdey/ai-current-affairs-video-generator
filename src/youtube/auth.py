@@ -92,8 +92,58 @@ class YouTubeAuth:
             logger.error(f"Authentication failed: {e}", exc_info=True)
             return False
 
+    def _credentials_from_dict(self, token_data: dict) -> Optional["Credentials"]:
+        """Build Credentials object from a token dict, with field validation."""
+        required_fields = ["token", "refresh_token", "token_uri", "client_id", "client_secret"]
+        missing_fields = [f for f in required_fields if not token_data.get(f)]
+        if missing_fields:
+            logger.warning(f"Token data missing required fields: {missing_fields}")
+            return None
+        return Credentials(
+            token=token_data.get("token"),
+            refresh_token=token_data.get("refresh_token"),
+            token_uri=token_data.get("token_uri"),
+            client_id=token_data.get("client_id"),
+            client_secret=token_data.get("client_secret"),
+            scopes=token_data.get("scopes")
+        )
+
+    def _parse_token_json(self, content: str, source: str) -> Optional[dict]:
+        """Try to parse token JSON, handling common corruption issues."""
+        import base64
+
+        # Attempt 1: raw parse
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt 2: strip BOM, leading/trailing whitespace
+        try:
+            return json.loads(content.strip().lstrip('\ufeff'))
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt 3: base64-encoded JSON
+        try:
+            return json.loads(base64.b64decode(content.strip()).decode('utf-8'))
+        except Exception:
+            pass
+
+        logger.error(f"Invalid JSON in {source}: first 80 chars = {repr(content[:80])}")
+        return None
+
     def _load_credentials(self) -> Optional[Credentials]:
-        """Load credentials from token file"""
+        """Load credentials from environment variable (CI) or token file."""
+        # CI/CD: try YOUTUBE_TOKEN_JSON env var first
+        env_token = os.environ.get('YOUTUBE_TOKEN_JSON')
+        if env_token:
+            token_data = self._parse_token_json(env_token, 'YOUTUBE_TOKEN_JSON env var')
+            if token_data:
+                logger.info("Loaded credentials from YOUTUBE_TOKEN_JSON environment variable")
+                return self._credentials_from_dict(token_data)
+            logger.warning("YOUTUBE_TOKEN_JSON env var set but could not be parsed")
+
         token_path = Path(self.token_file)
 
         if not token_path.exists():
@@ -101,29 +151,16 @@ class YouTubeAuth:
             return None
 
         try:
-            with open(token_path, "r") as f:
-                token_data = json.load(f)
+            with open(token_path, "r", encoding='utf-8-sig') as f:
+                content = f.read()
 
-            # Validate required fields
-            required_fields = ["token", "refresh_token", "token_uri", "client_id", "client_secret"]
-            missing_fields = [field for field in required_fields if not token_data.get(field)]
-
-            if missing_fields:
-                logger.warning(f"Token file missing required fields: {missing_fields}")
+            token_data = self._parse_token_json(content, self.token_file)
+            if token_data is None:
                 return None
 
             logger.info(f"Successfully loaded credentials from: {self.token_file}")
-            return Credentials(
-                token=token_data.get("token"),
-                refresh_token=token_data.get("refresh_token"),
-                token_uri=token_data.get("token_uri"),
-                client_id=token_data.get("client_id"),
-                client_secret=token_data.get("client_secret"),
-                scopes=token_data.get("scopes")
-            )
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in token file: {e}")
-            return None
+            return self._credentials_from_dict(token_data)
+
         except Exception as e:
             logger.error(f"Failed to load token: {e}")
             return None

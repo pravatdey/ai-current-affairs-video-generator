@@ -70,9 +70,52 @@ jobs:
 
       - name: Setup YouTube credentials
         if: ${{ github.event.inputs.upload != 'false' }}
+        env:
+          YOUTUBE_TOKEN_SECRET: ${{ secrets.YOUTUBE_TOKEN }}
+          YOUTUBE_CLIENT_SECRETS_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
         run: |
-          echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
-          echo '${{ secrets.YOUTUBE_TOKEN }}' > config/youtube_token.json
+          python3 -c "
+          import os, json, sys, base64
+
+          def parse_secret(name, value):
+              if not value:
+                  print(f'ERROR: {name} secret is empty')
+                  sys.exit(1)
+              # Try raw JSON first
+              try:
+                  return json.loads(value)
+              except json.JSONDecodeError:
+                  pass
+              # Try base64-decoded JSON
+              try:
+                  return json.loads(base64.b64decode(value).decode('utf-8'))
+              except Exception:
+                  pass
+              # Try stripping surrounding whitespace/quotes then parse
+              try:
+                  return json.loads(value.strip().strip(\"'\"))
+              except Exception as e:
+                  print(f'ERROR: Cannot parse {name} as JSON or base64-JSON: {e}')
+                  print(f'  First 50 chars: {repr(value[:50])}')
+                  sys.exit(1)
+
+          token_data = parse_secret('YOUTUBE_TOKEN', os.environ['YOUTUBE_TOKEN_SECRET'])
+          with open('config/youtube_token.json', 'w') as f:
+              json.dump(token_data, f, indent=2)
+          required = ['token', 'refresh_token', 'token_uri', 'client_id', 'client_secret']
+          missing = [k for k in required if not token_data.get(k)]
+          if missing:
+              print(f'WARNING: youtube_token.json is missing fields: {missing}')
+          else:
+              print('YouTube token written and validated successfully')
+
+          secrets_val = os.environ.get('YOUTUBE_CLIENT_SECRETS_SECRET', '')
+          if secrets_val:
+              secrets_data = parse_secret('YOUTUBE_CLIENT_SECRETS', secrets_val)
+              with open('config/client_secrets.json', 'w') as f:
+                  json.dump(secrets_data, f, indent=2)
+              print('Client secrets written successfully')
+          "
         continue-on-error: false
 
       - name: Run video generation pipeline
