@@ -68,6 +68,9 @@ class AvatarGenerator:
         if method == "auto":
             self.method = self._select_best_method()
 
+        # Mouth region for the default avatar (set when avatar is created)
+        self._default_mouth_region = None
+
         logger.info(f"AvatarGenerator initialized: method={self.method}, available={self.available_methods}")
 
     def _detect_methods(self) -> list:
@@ -292,112 +295,373 @@ class AvatarGenerator:
         avatar_image: str
     ) -> AvatarResult:
         """
-        Generate animated avatar video with subtle movements and audio.
-        Creates a more engaging video than a static image.
+        Generate lip-sync animated avatar video.
+
+        Analyses per-frame audio amplitude and drives mouth open/close animation
+        so the avatar appears to speak in sync with the audio.
+        Also applies subtle breathing brightness variation for a lifelike feel.
         """
         try:
-            from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips
-            from PIL import Image
+            from moviepy.video.VideoClip import VideoClip
+            from moviepy.editor import AudioFileClip
+            from PIL import Image, ImageDraw
             import numpy as np
+            import math
 
-            logger.info("Generating animated avatar video with audio")
+            logger.info("Generating lip-sync animated avatar video")
 
-            # Load audio
+            # ── Audio ────────────────────────────────────────────────────────
             audio = AudioFileClip(audio_path)
             duration = audio.duration
+            fps = 30
 
-            # Load and prepare the avatar image
-            pil_image = Image.open(avatar_image)
+            # Per-frame amplitude values in [0, 1] — used to drive mouth open
+            amplitudes = self._extract_audio_amplitude(audio_path, fps, duration)
+            logger.info(f"Lip-sync: extracted {len(amplitudes)} amplitude frames")
 
-            # Resize to 1080p maintaining aspect ratio
-            target_height = 1080
+            # ── Avatar image ─────────────────────────────────────────────────
+            pil_image = Image.open(avatar_image).convert('RGB')
+
+            # Resize to 720 p, preserving aspect ratio, even width
+            target_height = 720
             aspect_ratio = pil_image.width / pil_image.height
             target_width = int(target_height * aspect_ratio)
-            # Ensure width is even for video encoding
             target_width = target_width if target_width % 2 == 0 else target_width + 1
-
             pil_image = pil_image.resize((target_width, target_height), Image.LANCZOS)
 
-            # Convert to numpy array
-            base_frame = np.array(pil_image)
+            # ── Mouth detection ──────────────────────────────────────────────
+            mouth_region = self._get_mouth_region(pil_image, avatar_image)
+            logger.info(f"Mouth region ({mouth_region['method']}): "
+                        f"cx={mouth_region['cx']} cy={mouth_region['cy']} "
+                        f"w={mouth_region['w']} h={mouth_region['h']}")
 
-            # Create subtle animation frames
-            def make_animated_frame(t):
-                """Create frame with subtle breathing/idle animation"""
-                import math
+            # Frozen base frame (numpy) — we copy & paint over each frame
+            base_array = np.array(pil_image)
 
-                # Copy base frame
-                frame = base_frame.copy()
-
-                # Subtle vertical "breathing" movement (very slight scale pulse)
-                breath_cycle = math.sin(t * 1.5) * 0.003  # Very subtle 1.5 Hz breathing
-
-                # Apply subtle brightness variation to simulate life
-                brightness_var = 1.0 + math.sin(t * 0.8) * 0.02  # Subtle brightness pulse
-
-                # Apply brightness variation
-                frame = np.clip(frame * brightness_var, 0, 255).astype(np.uint8)
-
-                return frame
-
-            # Create the animated video clip
-            animated_clip = ImageClip(avatar_image, duration=duration)
-            animated_clip = animated_clip.resize(height=target_height)
-
-            # For a more sophisticated animation, we can create a VideoClip with frame function
-            from moviepy.video.VideoClip import VideoClip
-
-            # Create animated video with subtle movement
+            # ── Frame generator ──────────────────────────────────────────────
             def make_frame(t):
-                """Generate frame with subtle idle animation"""
-                import math
+                # --- amplitude for this timestamp ---
+                frame_idx = min(int(t * fps), len(amplitudes) - 1)
+                amplitude = float(amplitudes[frame_idx])
 
-                frame = base_frame.copy().astype(np.float32)
+                # Subtle breathing brightness variation
+                brightness = 1.0 + math.sin(t * 0.9) * 0.010 + math.cos(t * 1.7) * 0.005
+                frame_array = np.clip(base_array * brightness, 0, 255).astype(np.uint8)
 
-                # Subtle brightness variation (simulates subtle lighting changes)
-                brightness = 1.0 + math.sin(t * 0.7) * 0.015
-                frame = frame * brightness
+                # Draw animated mouth on top
+                frame_img = Image.fromarray(frame_array)
+                draw = ImageDraw.Draw(frame_img)
+                self._draw_mouth_frame(draw, mouth_region, amplitude, t)
 
-                # Clip values to valid range
-                frame = np.clip(frame, 0, 255).astype(np.uint8)
+                return np.array(frame_img)
 
-                return frame
+            # ── Build and export ─────────────────────────────────────────────
+            video_clip = VideoClip(make_frame, duration=duration)
+            video_clip = video_clip.set_fps(fps)
+            video_clip = video_clip.set_audio(audio)
 
-            animated_video = VideoClip(make_frame, duration=duration)
-            animated_video = animated_video.set_fps(30)
-
-            # Set audio
-            video = animated_video.set_audio(audio)
-
-            # Write output
-            logger.info(f"Writing animated avatar video: {output_path}")
-            video.write_videofile(
+            logger.info(f"Writing lip-sync avatar video: {output_path}")
+            video_clip.write_videofile(
                 output_path,
-                fps=30,
+                fps=fps,
                 codec='libx264',
                 audio_codec='aac',
-                bitrate='5000k',
+                bitrate='4000k',
                 verbose=False,
                 logger=None
             )
 
-            # Cleanup
             audio.close()
-            animated_video.close()
+            video_clip.close()
 
-            logger.info(f"Avatar video generated successfully: {duration:.1f}s")
-
+            logger.info(f"Lip-sync avatar video generated successfully: {duration:.1f}s")
             return AvatarResult(
                 success=True,
                 video_path=output_path,
                 duration=duration,
-                method="simple_animated"
+                method="lip_sync_animated"
             )
 
         except Exception as e:
-            logger.error(f"Animated avatar generation failed: {e}")
-            # Try basic static fallback
+            logger.error(f"Lip-sync avatar generation failed: {e}")
             return self._generate_static_fallback(audio_path, output_path, avatar_image)
+
+    # ── Lip-sync helpers ──────────────────────────────────────────────────────
+
+    def _extract_audio_amplitude(
+        self, audio_path: str, fps: int, duration: float
+    ):
+        """
+        Return a float32 numpy array of length int(duration*fps)+1 whose
+        values are the normalised RMS amplitude of the audio at each video frame.
+        0 = silence, 1 = peak loudness.
+
+        Falls back gracefully: librosa → pydub → simulated speech rhythm.
+        """
+        import numpy as np
+
+        n_frames = int(duration * fps) + 1
+
+        # ── librosa (best quality) ────────────────────────────────────────────
+        try:
+            import librosa
+            y, sr = librosa.load(audio_path, sr=None, mono=True)
+            hop = max(1, int(sr / fps))
+            rms = librosa.feature.rms(y=y, hop_length=hop)[0].astype(np.float32)
+            logger.debug("Lip-sync amplitude: librosa")
+        except ImportError:
+            rms = None
+
+        # ── pydub ─────────────────────────────────────────────────────────────
+        if rms is None:
+            try:
+                from pydub import AudioSegment
+                seg = AudioSegment.from_file(audio_path).set_channels(1)
+                sr = seg.frame_rate
+                samples = np.array(seg.get_array_of_samples(), dtype=np.float32)
+                frame_size = max(1, int(sr / fps))
+                rms = np.array([
+                    np.sqrt(np.mean(
+                        samples[i * frame_size: min((i + 1) * frame_size, len(samples))] ** 2
+                    ))
+                    for i in range(n_frames)
+                ], dtype=np.float32)
+                logger.debug("Lip-sync amplitude: pydub")
+            except Exception as exc:
+                logger.debug(f"Lip-sync pydub failed: {exc}")
+                rms = None
+
+        # ── simulated speech rhythm (last resort) ─────────────────────────────
+        if rms is None:
+            logger.debug("Lip-sync amplitude: simulated rhythm")
+            t = np.linspace(0, duration, n_frames, dtype=np.float32)
+            rms = (
+                np.abs(np.sin(t * 3.8)) * np.abs(np.sin(t * 7.1 + 0.9)) * 0.75
+                + np.abs(np.sin(t * 2.3 + 0.4)) * 0.20
+            )
+
+        # Normalise
+        rms = np.asarray(rms, dtype=np.float32)
+        peak = rms.max()
+        if peak > 1e-6:
+            rms = rms / peak
+
+        # Smooth (~80 ms window) for natural jaw movement
+        window = max(3, fps // 12)
+        kernel = np.ones(window, dtype=np.float32) / window
+        rms = np.convolve(np.pad(rms, (window // 2, window // 2), mode='edge'),
+                          kernel, mode='valid')
+
+        # Guarantee exact frame count
+        if len(rms) > n_frames:
+            rms = rms[:n_frames]
+        elif len(rms) < n_frames:
+            rms = np.pad(rms, (0, n_frames - len(rms)), mode='edge')
+
+        return rms
+
+    def _get_mouth_region(self, pil_image, avatar_image_path: str = None) -> dict:
+        """
+        Locate the lip/mouth area in the (already-resized) avatar image.
+
+        Detection order:
+          1. MediaPipe face-mesh  (most accurate, optional dependency)
+          2. OpenCV Haar cascade  (good, optional dependency)
+          3. Default avatar known proportions
+          4. Generic portrait heuristic
+        Returns dict: {cx, cy, w, h, method}
+        """
+        import numpy as np
+
+        img_w, img_h = pil_image.size
+
+        # ── 1. MediaPipe ──────────────────────────────────────────────────────
+        try:
+            import mediapipe as mp
+            with mp.solutions.face_mesh.FaceMesh(
+                static_image_mode=True, max_num_faces=1, refine_landmarks=True
+            ) as fm:
+                res = fm.process(np.array(pil_image))
+                if res.multi_face_landmarks:
+                    lm = res.multi_face_landmarks[0].landmark
+                    # Outer-lip landmark indices (MediaPipe 468-point mesh)
+                    lip_ids = [
+                        61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291,
+                        146, 91, 181, 84, 17, 314, 405, 321, 375,
+                    ]
+                    lx = [lm[i].x * img_w for i in lip_ids]
+                    ly = [lm[i].y * img_h for i in lip_ids]
+                    cx = int(np.mean(lx))
+                    cy = int(np.mean(ly))
+                    lip_w = int((max(lx) - min(lx)) * 1.5)
+                    lip_h = int((max(ly) - min(ly)) * 3.5)
+                    return {
+                        'cx': cx, 'cy': cy,
+                        'w': max(lip_w, int(img_w * 0.10)),
+                        'h': max(lip_h, int(img_h * 0.04)),
+                        'method': 'mediapipe',
+                    }
+        except (ImportError, Exception):
+            pass
+
+        # ── 2. OpenCV Haar cascade ────────────────────────────────────────────
+        try:
+            import cv2
+            gray = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2GRAY)
+            cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            )
+            faces = cascade.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40)
+            )
+            if len(faces) > 0:
+                fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+                return {
+                    'cx': fx + fw // 2,
+                    'cy': fy + int(fh * 0.76),   # mouth ≈ 76 % down the face box
+                    'w': int(fw * 0.48),
+                    'h': int(fh * 0.20),
+                    'method': 'opencv',
+                }
+        except (ImportError, Exception):
+            pass
+
+        # ── 3. Default avatar known proportions ───────────────────────────────
+        # Our generated avatar (512 × 640) has mouth centre at (256, 275).
+        # Proportionally: cx = 50 %, cy = 43 % of height.
+        if avatar_image_path and Path(avatar_image_path).name == 'news_anchor.png':
+            return {
+                'cx': img_w // 2,
+                'cy': int(img_h * 0.43),
+                'w': int(img_w * 0.175),
+                'h': int(img_h * 0.070),
+                'method': 'default_avatar_known',
+            }
+
+        # ── 4. Generic portrait heuristic ─────────────────────────────────────
+        return {
+            'cx': img_w // 2,
+            'cy': int(img_h * 0.66),
+            'w': int(img_w * 0.22),
+            'h': int(img_h * 0.09),
+            'method': 'heuristic',
+        }
+
+    def _draw_mouth_frame(
+        self, draw, mouth_region: dict, amplitude: float, t: float
+    ) -> None:
+        """
+        Paint an animated mouth onto a PIL ImageDraw at the given mouth_region.
+
+        Parameters
+        ----------
+        draw         : PIL.ImageDraw.Draw
+        mouth_region : {cx, cy, w, h}  — centre x/y, total width, max height
+        amplitude    : float [0, 1]    — current audio loudness
+        t            : float           — current video time (seconds), for jitter
+        """
+        import math
+
+        cx = mouth_region['cx']
+        cy = mouth_region['cy']
+        mw = mouth_region['w']
+        mh = mouth_region['h']
+
+        # Natural micro-jitter (proportional to speech energy so silence is still)
+        jitter = (math.sin(t * 21.3) * 0.03 + math.cos(t * 13.7) * 0.02) * amplitude
+        eff_amp = max(0.0, min(1.0, amplitude + jitter))
+
+        # Gamma curve: small movements for quiet audio, wide for loud speech
+        open_ratio = eff_amp ** 0.60
+        open_h = int(mh * open_ratio)
+        half_open = open_h // 2
+        half_w = mw // 2
+
+        # Style parameters
+        lip_thick = max(2, mh // 5)
+
+        # Colour palette
+        LIP_COLOR  = (185, 78, 78)    # pink-red lips
+        DARK_COLOR = (28, 8, 8)       # inner-mouth darkness
+        TEETH_TOP  = (248, 244, 236)  # upper teeth — warm white
+        TEETH_BOT  = (235, 232, 224)  # lower teeth — slightly darker
+
+        if open_h < 3:
+            # ── CLOSED ──────────────────────────────────────────────────────
+            # Upper lip arch
+            draw.arc(
+                [cx - half_w, cy - lip_thick, cx + half_w, cy + lip_thick // 2],
+                start=195, end=345, fill=LIP_COLOR, width=lip_thick,
+            )
+            # Lower lip (slightly fuller)
+            draw.arc(
+                [cx - half_w + 4, cy - lip_thick // 2,
+                 cx + half_w - 4, cy + lip_thick + 2],
+                start=15, end=165, fill=LIP_COLOR, width=lip_thick,
+            )
+        else:
+            # ── OPEN ─────────────────────────────────────────────────────────
+
+            # 1. Dark inner cavity
+            draw.ellipse(
+                [cx - half_w + lip_thick, cy - half_open,
+                 cx + half_w - lip_thick, cy + half_open],
+                fill=DARK_COLOR,
+            )
+
+            # 2. Upper teeth
+            upper_teeth_h = max(2, half_open - lip_thick)
+            if upper_teeth_h > 3:
+                tb = [
+                    cx - half_w + lip_thick + 2,
+                    cy - half_open + lip_thick // 2,
+                    cx + half_w - lip_thick - 2,
+                    cy - half_open + lip_thick // 2 + upper_teeth_h,
+                ]
+                draw.rectangle(tb, fill=TEETH_TOP)
+                # Tooth divider lines
+                tw = (tb[2] - tb[0]) // 4
+                for i in range(1, 4):
+                    tx = tb[0] + i * tw
+                    draw.line([(tx, tb[1]), (tx, tb[3])],
+                              fill=(215, 210, 200), width=1)
+
+            # 3. Lower teeth (thin sliver)
+            if half_open > lip_thick * 2:
+                lower_h = max(2, min(half_open // 3, lip_thick))
+                lb = [
+                    cx - half_w + lip_thick + 4,
+                    cy + half_open - lip_thick // 2 - lower_h,
+                    cx + half_w - lip_thick - 4,
+                    cy + half_open - lip_thick // 2,
+                ]
+                draw.rectangle(lb, fill=TEETH_BOT)
+
+            # 4. Upper lip arc
+            draw.arc(
+                [cx - half_w, cy - half_open - lip_thick // 2,
+                 cx + half_w, cy - half_open + lip_thick],
+                start=180, end=360, fill=LIP_COLOR, width=lip_thick,
+            )
+
+            # 5. Lower lip arc (slightly fuller)
+            lo_thick = int(lip_thick * 1.25)
+            draw.arc(
+                [cx - half_w, cy + half_open - lip_thick,
+                 cx + half_w, cy + half_open + lo_thick // 2],
+                start=0, end=180, fill=LIP_COLOR, width=lo_thick,
+            )
+
+            # 6. Corner accents
+            corner_r = max(2, lip_thick // 2)
+            for corner_x in [cx - half_w, cx + half_w]:
+                draw.ellipse(
+                    [corner_x - corner_r, cy - corner_r,
+                     corner_x + corner_r, cy + corner_r],
+                    fill=LIP_COLOR,
+                )
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _generate_static_fallback(
         self,
@@ -646,12 +910,13 @@ class AvatarGenerator:
                 (center_x + 12, nose_y + 10),
             ], fill=nose_color)
 
-            # Friendly smile
-            smile_color = '#dc2626'
+            # Mouth position stored for lip-sync animation (not drawn statically)
             smile_y = head_center_y + 55
-            # Draw a nice curved smile
-            draw.arc([center_x - 40, smile_y - 20, center_x + 40, smile_y + 20],
-                     start=10, end=170, fill=smile_color, width=5)
+            self._default_mouth_region = {
+                'cx': center_x, 'cy': smile_y,
+                'w': 90, 'h': 48,   # pixel coords in 512×640 image space
+                'method': 'default_avatar_known'
+            }
 
             # Ears
             ear_color = '#fcd9b6'
