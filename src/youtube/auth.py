@@ -31,11 +31,12 @@ class YouTubeAuth:
     7. Save it as "config/client_secrets.json"
     """
 
-    # Scopes required for uploading
+    # Scopes required for uploading videos and PDF to Drive
     SCOPES = [
         "https://www.googleapis.com/auth/youtube.upload",
         "https://www.googleapis.com/auth/youtube",
-        "https://www.googleapis.com/auth/youtube.force-ssl"
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/drive.file"  # Upload PDFs to Google Drive
     ]
 
     def __init__(
