@@ -227,7 +227,45 @@ class VideoGenerationPipeline:
             self.logger.info("Step 5: Composing final video...")
             final_video_path = self.video_dir / f"{video_id}_final.mp4"
 
-            headlines = [a.title for a in video_articles]
+            UPSC_KEYWORDS = {
+                # Polity & Governance
+                "parliament", "constitution", "supreme court", "high court", "lok sabha",
+                "rajya sabha", "election", "cabinet", "ministry", "government", "policy",
+                "bill", "act", "ordinance", "amendment", "tribunal", "judiciary",
+                # Economy
+                "gdp", "rbi", "budget", "inflation", "economy", "fiscal", "monetary",
+                "rupee", "stock", "sebi", "niti aayog", "finance", "trade", "export",
+                "import", "gst", "tax", "revenue", "bank", "credit",
+                # Environment & Geography
+                "climate", "environment", "pollution", "forest", "wildlife", "tiger",
+                "river", "dam", "earthquake", "cyclone", "flood", "drought", "glacier",
+                "biodiversity", "carbon", "emission", "renewable", "solar", "wind energy",
+                # Science & Technology
+                "isro", "space", "satellite", "launch", "missile", "nuclear", "science",
+                "technology", "ai", "digital", "cyber", "research", "innovation",
+                # International Relations
+                "india", "bilateral", "summit", "treaty", "un ", "united nations",
+                "g20", "g7", "brics", "nato", "asean", "saarc", "scо", "wto", "imf",
+                "world bank", "sanctions", "diplomacy", "foreign",
+                # Social & Schemes
+                "scheme", "mission", "yojana", "programme", "health", "education",
+                "poverty", "welfare", "rural", "urban", "infrastructure", "highway",
+                "railway", "metro", "airport", "port",
+                # History / Culture (Ancient/Medieval for UPSC GS1)
+                "heritage", "archaeological", "monument", "museum", "festival",
+                "culture", "art", "literature",
+            }
+
+            def is_upsc_relevant(title: str) -> bool:
+                title_lower = title.lower()
+                return any(kw in title_lower for kw in UPSC_KEYWORDS)
+
+            headlines = [
+                a.title for a in video_articles if is_upsc_relevant(a.title)
+            ]
+            # Fallback: if nothing passes the filter use all article titles
+            if not headlines:
+                headlines = [a.title for a in video_articles]
 
             composition_result = self.video_composer.compose(
                 avatar_video_path=str(avatar_path),
