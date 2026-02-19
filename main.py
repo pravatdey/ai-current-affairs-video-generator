@@ -267,12 +267,31 @@ class VideoGenerationPipeline:
             if not headlines:
                 headlines = [a.title for a in video_articles]
 
+            # Build script_data dict so PDF notes are generated from the script
+            script_data = {
+                'segments': [
+                    {
+                        'type': seg.type,
+                        'content': seg.content,
+                        'article_title': seg.article.title if seg.article else '',
+                        'key_points': seg.key_points,
+                        'exam_relevance': seg.exam_relevance,
+                        'subject_category': seg.subject_category,
+                        'important_terms': seg.important_terms,
+                        'timestamp': seg.timestamp,
+                    }
+                    for seg in script.segments
+                ],
+                'subjects_covered': script.subjects_covered,
+            }
+
             composition_result = self.video_composer.compose(
                 avatar_video_path=str(avatar_path),
                 output_path=str(final_video_path),
                 headlines=headlines,
                 title=script.title,
-                date=script.date
+                date=script.date,
+                script_data=script_data
             )
 
             if not composition_result.success:
