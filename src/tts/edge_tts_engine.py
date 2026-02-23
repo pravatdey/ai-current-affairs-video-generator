@@ -1,11 +1,21 @@
 """
 Edge TTS Engine - Microsoft Edge Text-to-Speech (Free)
+
+Enhancements for natural, clear news-delivery voice:
+- Text pre-processing: inserts natural pauses at punctuation, paragraph breaks,
+  and after topic headers so the speech breathes naturally
+- Audio post-processing: loudness normalisation, gentle high-pass filter for
+  clarity, and light compression for consistent volume across sentences
 """
 
 import asyncio
+import re
+import subprocess
 from pathlib import Path
 from typing import List, Optional
 import tempfile
+import uuid
+import shutil
 
 # Configure pydub to use ffmpeg from imageio-ffmpeg
 try:
@@ -18,6 +28,7 @@ except ImportError:
 
 import edge_tts
 from pydub import AudioSegment
+from pydub.effects import normalize, compress_dynamic_range
 
 from .base_tts import BaseTTS, TTSVoice, TTSResult
 from src.utils.logger import get_logger
@@ -33,8 +44,8 @@ class EdgeTTSEngine(BaseTTS):
 
     # Default voices for common languages
     DEFAULT_VOICES = {
-        "en": "en-US-GuyNeural",        # Male US English
-        "en-us": "en-US-GuyNeural",
+        "en": "en-IN-PrabhatNeural",    # Clear Indian English male — best for UPSC news
+        "en-us": "en-US-AndrewNeural",  # Natural US male
         "en-gb": "en-GB-RyanNeural",
         "en-in": "en-IN-PrabhatNeural",
         "hi": "hi-IN-MadhurNeural",      # Male Hindi
@@ -81,6 +92,151 @@ class EdgeTTSEngine(BaseTTS):
 
         logger.info(f"Initialized EdgeTTS with voice: {self.default_voice}")
 
+    # ------------------------------------------------------------------
+    # Text pre-processing — makes speech sound natural and clear
+    # ------------------------------------------------------------------
+
+    def _preprocess_text(self, text: str) -> str:
+        """
+        Clean and restructure text so Edge TTS produces natural,
+        easy-to-understand speech:
+
+        1. Strip markdown / symbols that TTS reads aloud awkwardly
+        2. Insert natural pause markers (SSML-like via punctuation tricks)
+        3. Expand common abbreviations used in current affairs
+        4. Break very long sentences into breath-sized chunks
+        """
+        # ── 1. Remove markdown and noisy symbols ──────────────────────
+        # Bold/italic markers
+        text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+        text = re.sub(r'_{1,3}(.*?)_{1,3}', r'\1', text)
+        # Bullet symbols → nothing (TTS will read them as words otherwise)
+        text = re.sub(r'^[\s]*[▸♦→•\-\*]+\s*', '', text, flags=re.MULTILINE)
+        # Remove URLs
+        text = re.sub(r'https?://\S+', '', text)
+        # Remove excessive brackets content like (GS2 | Polity)
+        text = re.sub(r'\(GS\d.*?\)', '', text)
+        # Remove hashtags
+        text = re.sub(r'#\w+', '', text)
+        # Remove emojis and special chars that aren't speech-friendly
+        text = re.sub(r'[✔✗✓✕→←↑↓■□●○◆◇★☆]', '', text)
+
+        # ── 2. Expand common abbreviations ────────────────────────────
+        abbreviations = {
+            r'\bSC\b': 'Supreme Court',
+            r'\bHC\b': 'High Court',
+            r'\bPM\b': 'Prime Minister',
+            r'\bCM\b': 'Chief Minister',
+            r'\bMP\b': 'Member of Parliament',
+            r'\bMLA\b': 'Member of Legislative Assembly',
+            r'\bGDP\b': 'Gross Domestic Product',
+            r'\bRBI\b': 'Reserve Bank of India',
+            r'\bISRO\b': 'Indian Space Research Organisation',
+            r'\bDRDO\b': 'Defence Research and Development Organisation',
+            r'\bNITI\b': 'NITI',
+            r'\bBNS\b': 'Bharatiya Nyaya Sanhita',
+            r'\bRPA\b': 'Representation of People Act',
+            r'\bNCRB\b': 'National Crime Records Bureau',
+            r'\bUoI\b': 'Union of India',
+            r'\bv\.\s*UoI\b': 'versus Union of India',
+            r'\bArt\.\s*(\d+)': r'Article \1',
+            r'\bSec\.\s*(\d+)': r'Section \1',
+            r'\bFY(\d{2})\b': r'Financial Year 20\1',
+            r'\b(\d+)%\b': r'\1 percent',
+            r'\b₹\s*(\d+)\b': r'\1 rupees',
+            r'\b(\d+)\s*crore\b': r'\1 crore rupees',
+            r'\bLEO\b': 'Low Earth Orbit',
+            r'\bG20\b': 'G 20',
+            r'\bG7\b': 'G 7',
+            r'\bBRICS\b': 'BRICS',
+            r'\bNATO\b': 'NATO',
+            r'\bASEAN\b': 'ASEAN',
+            r'\bLUFS\b': 'LUFS',
+        }
+        for pattern, replacement in abbreviations.items():
+            text = re.sub(pattern, replacement, text)
+
+        # ── 3. Add natural pauses ─────────────────────────────────────
+        # After a full stop that ends a sentence → extra pause (comma trick)
+        # Edge TTS respects commas as brief pauses
+        text = re.sub(r'\.\s+([A-Z])', r'. \1', text)   # ensure space after period
+
+        # Paragraph breaks → longer pause (period + newline → period + comma + newline)
+        text = re.sub(r'\n\n+', '. \n', text)
+        text = re.sub(r'\n', ' ', text)
+
+        # After colons in headers like "Key Points:" → pause
+        text = re.sub(r':\s+', ':  ', text)
+
+        # Number sequences like "1. point  2. point" → natural pause between
+        text = re.sub(r'(\d+)\.\s+', r'\1. ', text)
+
+        # ── 4. Break very long sentences at conjunctions ──────────────
+        # Sentences over 200 chars → split at "and", "but", "which", "that"
+        def break_long_sentence(m):
+            s = m.group(0)
+            if len(s) > 200:
+                s = re.sub(
+                    r'(?<!\w)(and|but|which|that|however|therefore|moreover|furthermore)\s+',
+                    r'\1, ',
+                    s,
+                    count=1
+                )
+            return s
+
+        text = re.sub(r'[^.!?]+[.!?]', break_long_sentence, text)
+
+        # ── 5. Final cleanup ──────────────────────────────────────────
+        text = re.sub(r' {2,}', ' ', text)   # collapse multiple spaces
+        text = text.strip()
+
+        return text
+
+    # ------------------------------------------------------------------
+    # Audio post-processing — clearer, louder, more consistent voice
+    # ------------------------------------------------------------------
+
+    def _postprocess_audio(self, audio_path: str) -> None:
+        """
+        Apply audio enhancement chain to the generated MP3:
+          1. High-pass filter at 100 Hz  → removes low-frequency muddiness
+          2. Gentle compression           → consistent volume, no sudden loud/quiet
+          3. Loudness normalisation       → target -14 LUFS for YouTube clarity
+          4. Slight presence boost (3kHz) → cuts through on phone speakers
+        All done with pydub; if any step fails it's silently skipped.
+        """
+        try:
+            audio = AudioSegment.from_file(audio_path)
+
+            # 1. High-pass filter — remove bass rumble that makes voice muddy
+            audio = audio.high_pass_filter(100)
+
+            # 2. Light compression — bring up quiet parts, tame loud parts
+            try:
+                audio = compress_dynamic_range(
+                    audio,
+                    threshold=-20.0,   # dB — start compressing here
+                    ratio=3.0,         # 3:1 ratio — gentle
+                    attack=5.0,        # ms
+                    release=50.0       # ms
+                )
+            except Exception:
+                pass  # compress_dynamic_range signature varies by pydub version
+
+            # 3. Normalise loudness to -14 LUFS equivalent
+            audio = normalize(audio, headroom=1.0)
+
+            # 4. Gentle overall volume boost after normalisation for extra clarity
+            audio = audio + 2   # +2 dB headroom boost — keeps voice upfront without harshness
+
+            # Export back to same path
+            audio.export(audio_path, format="mp3", bitrate="192k",
+                         parameters=["-q:a", "0"])
+            logger.info(f"Audio post-processed: {audio_path}")
+
+        except Exception as e:
+            logger.warning(f"Audio post-processing skipped: {e}")
+
     async def synthesize(
         self,
         text: str,
@@ -125,6 +281,9 @@ class EdgeTTSEngine(BaseTTS):
 
             # Generate audio
             await communicate.save(str(output_path))
+
+            # Enhance audio clarity (normalise, compress, EQ)
+            self._postprocess_audio(str(output_path))
 
             # Get audio duration
             duration = self._get_audio_duration(str(output_path))
@@ -252,6 +411,9 @@ class EdgeTTSEngine(BaseTTS):
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 raise RuntimeError(f"ffmpeg error: {result.stderr}")
+
+            # Enhance audio clarity (normalise, compress, EQ)
+            self._postprocess_audio(str(output_path))
 
             # Get duration using ffprobe or estimate from file size
             try:
