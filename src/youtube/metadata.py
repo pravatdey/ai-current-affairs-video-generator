@@ -220,7 +220,8 @@ Language: {language}
         ]
 
         if pdf_link:
-            lines.append(f"🔗 Download PDF: {pdf_link}")
+            lines.append("🔗 Download PDF Study Notes (Click the link below):")
+            lines.append(pdf_link)
         elif pdf_filename:
             lines.append("🔗 PDF Study Notes: Check the pinned comment for download link")
         else:
