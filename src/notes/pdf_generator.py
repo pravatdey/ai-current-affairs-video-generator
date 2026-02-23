@@ -1,9 +1,19 @@
 """
-PDF Notes Generator - Creates comprehensive study notes for UPSC/competitive exam preparation
-Current Affairs Academy - Detailed PDF with 20 practice questions
+PDF Notes Generator - Drishti IAS SARAANSH style study notes
+Current Affairs Academy
+
+Layout matches the reference Drishti IAS Daily Current Affairs format:
+- Page header with academy name + date + page number
+- Contextual trigger box at top of each topic
+- Structured two-column layouts for Challenges vs Suggestions
+- Hierarchical bullets: main (a) → sub (♦) → deeper (→)
+- Comparison/contrast tables (e.g. Freebies vs Welfare)
+- Key judgements / key facts boxes
+- Important terms glossary table
+- Practice questions section
+- Dense, information-rich layout on A4
 """
 
-import os
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -16,11 +26,11 @@ from reportlab.lib.units import inch, cm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, Image, ListFlowable, ListItem, HRFlowable, KeepTogether
+    PageBreak, HRFlowable, KeepTogether, Frame, PageTemplate
 )
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.colors import HexColor
+from reportlab.platypus.flowables import HRFlowable
 
 from .content_extractor import ExtractedContent, KeyPoint, UPSCRelevance
 from src.utils.logger import get_logger
@@ -29,296 +39,492 @@ logger = get_logger(__name__)
 
 ACADEMY_NAME = "Current Affairs Academy"
 ACADEMY_TAGLINE = "Your Daily Dose of Knowledge | UPSC | State PSC | Banking | SSC"
+WEBSITE = "www.currentaffairsacademy.in"
 
+# ---------------------------------------------------------------------------
+# Colour palette  (Drishti IAS aesthetic – navy / white / grey)
+# ---------------------------------------------------------------------------
+C = {
+    'navy':       HexColor('#0A2E5C'),
+    'navy_light': HexColor('#1A4A8A'),
+    'red':        HexColor('#C8372D'),
+    'gold':       HexColor('#D4A017'),
+    'dark':       HexColor('#1A202C'),
+    'body':       HexColor('#2D3748'),
+    'muted':      HexColor('#718096'),
+    'white':      colors.white,
+    'bg_light':   HexColor('#F7FAFC'),
+    'bg_blue':    HexColor('#EBF4FF'),
+    'bg_yellow':  HexColor('#FFFBEB'),
+    'bg_green':   HexColor('#F0FFF4'),
+    'bg_red':     HexColor('#FFF5F5'),
+    'prelims':    HexColor('#2B6CB0'),
+    'mains':      HexColor('#553C9A'),
+    'border':     HexColor('#CBD5E0'),
+    'orange':     HexColor('#C05621'),
+}
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
 
 @dataclass
 class TopicNote:
-    """A single topic's notes"""
+    """One topic's complete structured notes."""
     title: str
-    summary: str
-    key_points: List[KeyPoint]
-    upsc_relevance: UPSCRelevance
-    important_terms: Dict[str, str]
-    practice_questions: List[str]
-    related_topics: List[str]
-    detailed_analysis: str = ""        # Full detailed analysis (more than video)
-    background_context: str = ""       # Background/historical context
-    implications: str = ""             # Implications and significance
-    image_path: Optional[str] = None
-    timestamp: str = ""                # Video timestamp reference
+    trigger_line: str           # 1-sentence news trigger (like Drishti IAS)
+    what_is_it: str             # "About:" section — definition / overview
+    key_provisions: List[str]   # Constitutional / legal / structural points
+    sub_sections: List[Dict]    # [{'heading': str, 'points': [str], 'sub_points': {str: [str]}}]
+    challenges: List[str]       # Challenge bullet points (left column)
+    suggestions: List[str]      # Suggestion / way-forward bullet points (right column)
+    comparison_table: Optional[Dict] = None   # {'headers': [], 'rows': [[]], 'col_widths': []}
+    key_judgements: List[str] = field(default_factory=list)
+    key_facts_box: List[str] = field(default_factory=list)   # sidebar facts
+    important_terms: Dict[str, str] = field(default_factory=dict)
+    practice_questions: List[str] = field(default_factory=list)
+    upsc_tags: str = ""         # e.g. "GS2 | Polity | Prelims + Mains"
+    timestamp: str = ""
 
 
 @dataclass
 class StudyNote:
-    """Complete study notes for a video/class"""
+    """Full day's notes."""
     title: str
     date: str
     topics: List[TopicNote]
     video_duration: float = 0.0
-    video_path: Optional[str] = None
     language: str = "English"
     additional_resources: List[str] = field(default_factory=list)
 
 
-class PDFNotesGenerator:
-    """
-    Generates comprehensive PDF study notes for Current Affairs Academy.
-    Features:
-    - Academy branding (Current Affairs Academy logo)
-    - Full detailed content beyond the video
-    - Consolidated 20 practice questions section
-    - UPSC relevance tags
-    - Quick revision section
-    """
+# ---------------------------------------------------------------------------
+# Style factory
+# ---------------------------------------------------------------------------
 
-    # Color scheme - Academy brand colors
-    COLORS = {
-        'academy_primary': HexColor('#0A2E5C'),    # Deep navy blue
-        'academy_secondary': HexColor('#C8372D'),  # Academy red
-        'academy_gold': HexColor('#D4A017'),       # Gold accent
-        'primary': HexColor('#1a365d'),            # Dark blue
-        'secondary': HexColor('#2c5282'),          # Medium blue
-        'accent': HexColor('#ed8936'),             # Orange
-        'success': HexColor('#38a169'),            # Green
-        'warning': HexColor('#d69e2e'),            # Yellow
-        'danger': HexColor('#e53e3e'),             # Red
-        'light': HexColor('#f7fafc'),              # Light gray
-        'light_blue': HexColor('#EBF4FF'),         # Light blue bg
-        'dark': HexColor('#1a202c'),               # Dark gray
-        'prelims': HexColor('#3182ce'),            # Blue for Prelims
-        'mains': HexColor('#805ad5'),              # Purple for Mains
-        'question_bg': HexColor('#FFFBEB'),        # Light yellow for questions
-        'section_bg': HexColor('#F0F7FF'),         # Light blue for sections
+def _make_styles() -> Dict[str, ParagraphStyle]:
+    base = getSampleStyleSheet()
+
+    def S(name, parent='Normal', **kw):
+        return ParagraphStyle(name, parent=base[parent], **kw)
+
+    return {
+        # ── Header / Titles ──────────────────────────────────────────────
+        'PageTitle': S('PageTitle', 'Normal',
+                       fontSize=9, textColor=C['muted'], alignment=TA_RIGHT),
+
+        'MainTitle': S('MainTitle', 'Normal',
+                       fontSize=20, textColor=C['navy'],
+                       alignment=TA_CENTER, fontName='Helvetica-Bold',
+                       spaceAfter=4, leading=24),
+
+        'SubTitle': S('SubTitle', 'Normal',
+                      fontSize=11, textColor=C['navy_light'],
+                      alignment=TA_CENTER, spaceAfter=10),
+
+        # ── Topic heading ────────────────────────────────────────────────
+        'TopicTitle': S('TopicTitle', 'Normal',
+                        fontSize=13, textColor=C['white'],
+                        fontName='Helvetica-Bold',
+                        alignment=TA_LEFT,
+                        spaceBefore=4, spaceAfter=0,
+                        leading=17),
+
+        # ── Trigger line ─────────────────────────────────────────────────
+        'Trigger': S('Trigger', 'Normal',
+                     fontSize=9, textColor=C['dark'],
+                     alignment=TA_JUSTIFY, leading=13,
+                     spaceBefore=2, spaceAfter=4,
+                     fontName='Helvetica-Oblique'),
+
+        # ── Section headers ───────────────────────────────────────────────
+        'SecHeader': S('SecHeader', 'Normal',
+                       fontSize=10, textColor=C['navy'],
+                       fontName='Helvetica-Bold',
+                       spaceBefore=7, spaceAfter=3),
+
+        'SecHeaderRed': S('SecHeaderRed', 'Normal',
+                          fontSize=10, textColor=C['red'],
+                          fontName='Helvetica-Bold',
+                          spaceBefore=7, spaceAfter=3),
+
+        # ── Body text ────────────────────────────────────────────────────
+        'Body': S('Body', 'Normal',
+                  fontSize=9, textColor=C['body'],
+                  alignment=TA_JUSTIFY, leading=13,
+                  spaceBefore=2, spaceAfter=2),
+
+        # ── Bullet levels ────────────────────────────────────────────────
+        # Level 1  • ▸  (main bullet)
+        'Bullet1': S('Bullet1', 'Normal',
+                     fontSize=9, textColor=C['body'],
+                     leftIndent=10, firstLineIndent=-10,
+                     leading=13, spaceBefore=2, spaceAfter=2),
+
+        # Level 2  ♦  (sub-bullet)
+        'Bullet2': S('Bullet2', 'Normal',
+                     fontSize=9, textColor=C['body'],
+                     leftIndent=22, firstLineIndent=-10,
+                     leading=13, spaceBefore=1, spaceAfter=1),
+
+        # Level 3  →  (deep sub-bullet)
+        'Bullet3': S('Bullet3', 'Normal',
+                     fontSize=8.5, textColor=C['muted'],
+                     leftIndent=34, firstLineIndent=-10,
+                     leading=12, spaceBefore=1, spaceAfter=1),
+
+        # ── Two-column bullets ────────────────────────────────────────────
+        'ColBullet': S('ColBullet', 'Normal',
+                       fontSize=9, textColor=C['body'],
+                       leftIndent=10, firstLineIndent=-10,
+                       leading=13, spaceBefore=2, spaceAfter=2),
+
+        # ── Table styles ─────────────────────────────────────────────────
+        'TH': S('TH', 'Normal',
+                fontSize=9, textColor=C['white'],
+                fontName='Helvetica-Bold', alignment=TA_CENTER, leading=12),
+
+        'TD': S('TD', 'Normal',
+                fontSize=8.5, textColor=C['body'],
+                alignment=TA_JUSTIFY, leading=12,
+                spaceBefore=2, spaceAfter=2),
+
+        'TDLeft': S('TDLeft', 'Normal',
+                    fontSize=8.5, textColor=C['navy'],
+                    fontName='Helvetica-Bold',
+                    alignment=TA_LEFT, leading=12),
+
+        # ── Tags ─────────────────────────────────────────────────────────
+        'Tag': S('Tag', 'Normal',
+                 fontSize=8, textColor=C['white'],
+                 fontName='Helvetica-Bold', alignment=TA_CENTER),
+
+        # ── Questions ────────────────────────────────────────────────────
+        'QNum': S('QNum', 'Normal',
+                  fontSize=9, textColor=C['red'],
+                  fontName='Helvetica-Bold',
+                  spaceBefore=8, spaceAfter=2),
+
+        'QText': S('QText', 'Normal',
+                   fontSize=9, textColor=C['body'],
+                   leftIndent=8, leading=13,
+                   spaceBefore=0, spaceAfter=4),
+
+        'QAns': S('QAns', 'Normal',
+                  fontSize=8.5, textColor=C['muted'],
+                  leftIndent=16, fontName='Helvetica-Oblique',
+                  spaceBefore=1, spaceAfter=6),
+
+        # ── Footer ───────────────────────────────────────────────────────
+        'Footer': S('Footer', 'Normal',
+                    fontSize=7.5, textColor=C['muted'],
+                    alignment=TA_CENTER),
+
+        # ── Key facts box ────────────────────────────────────────────────
+        'FactItem': S('FactItem', 'Normal',
+                      fontSize=8.5, textColor=C['body'],
+                      leftIndent=8, firstLineIndent=-8,
+                      leading=12, spaceBefore=1, spaceAfter=1),
+
+        # ── Judgement item ────────────────────────────────────────────────
+        'JudgeItem': S('JudgeItem', 'Normal',
+                       fontSize=9, textColor=C['body'],
+                       leftIndent=14, firstLineIndent=-14,
+                       leading=13, spaceBefore=2, spaceAfter=2),
     }
 
-    def __init__(self, output_dir: str = "output/notes"):
-        """
-        Initialize PDF notes generator.
 
-        Args:
-            output_dir: Directory to save generated PDFs
-        """
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.styles = self._create_styles()
-        logger.info(f"PDFNotesGenerator initialized. Output: {self.output_dir}")
+# ---------------------------------------------------------------------------
+# Page-level callback for running header + footer
+# ---------------------------------------------------------------------------
 
-    def _create_styles(self) -> Dict[str, ParagraphStyle]:
-        """Create custom paragraph styles for the PDF."""
-        base_styles = getSampleStyleSheet()
+class _HeaderFooterCanvas:
+    """Mixin – we inject header/footer via onPage callback."""
 
-        custom_styles = {
-            'AcademyTitle': ParagraphStyle(
-                'AcademyTitle',
-                parent=base_styles['Normal'],
-                fontSize=28,
-                textColor=colors.white,
-                spaceAfter=6,
-                alignment=TA_CENTER,
-                fontName='Helvetica-Bold',
-                leading=34
-            ),
-            'AcademyTagline': ParagraphStyle(
-                'AcademyTagline',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=HexColor('#FFD700'),
-                spaceAfter=4,
-                alignment=TA_CENTER,
-                fontName='Helvetica-Oblique'
-            ),
-            'MainTitle': ParagraphStyle(
-                'MainTitle',
-                parent=base_styles['Heading1'],
-                fontSize=22,
-                textColor=self.COLORS['academy_primary'],
-                spaceAfter=16,
-                alignment=TA_CENTER,
-                fontName='Helvetica-Bold'
-            ),
-            'SubTitle': ParagraphStyle(
-                'SubTitle',
-                parent=base_styles['Normal'],
-                fontSize=13,
-                textColor=self.COLORS['secondary'],
-                spaceAfter=20,
-                alignment=TA_CENTER
-            ),
-            'TopicTitle': ParagraphStyle(
-                'TopicTitle',
-                parent=base_styles['Heading2'],
-                fontSize=15,
-                textColor=self.COLORS['academy_primary'],
-                spaceBefore=18,
-                spaceAfter=8,
-                fontName='Helvetica-Bold',
-                borderWidth=1,
-                borderColor=self.COLORS['academy_primary'],
-                borderPadding=6,
-                backColor=self.COLORS['section_bg']
-            ),
-            'SectionHeader': ParagraphStyle(
-                'SectionHeader',
-                parent=base_styles['Heading3'],
-                fontSize=11,
-                textColor=self.COLORS['secondary'],
-                spaceBefore=12,
-                spaceAfter=6,
-                fontName='Helvetica-Bold'
-            ),
-            'DetailedText': ParagraphStyle(
-                'DetailedText',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['dark'],
-                spaceBefore=4,
-                spaceAfter=6,
-                alignment=TA_JUSTIFY,
-                leading=15
-            ),
-            'KeyPoint': ParagraphStyle(
-                'KeyPoint',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['dark'],
-                spaceBefore=4,
-                spaceAfter=4,
-                leftIndent=12,
-                bulletIndent=4
-            ),
-            'BodyText': ParagraphStyle(
-                'BodyText',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['dark'],
-                spaceBefore=4,
-                spaceAfter=4,
-                alignment=TA_JUSTIFY
-            ),
-            'Term': ParagraphStyle(
-                'Term',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['academy_primary'],
-                fontName='Helvetica-Bold'
-            ),
-            'Definition': ParagraphStyle(
-                'Definition',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['dark'],
-                leftIndent=14
-            ),
-            'Question': ParagraphStyle(
-                'Question',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['dark'],
-                spaceBefore=8,
-                spaceAfter=4,
-                leftIndent=8,
-                leading=15
-            ),
-            'QuestionNumber': ParagraphStyle(
-                'QuestionNumber',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['academy_secondary'],
-                spaceBefore=10,
-                spaceAfter=2,
-                fontName='Helvetica-Bold'
-            ),
-            'Tag': ParagraphStyle(
-                'Tag',
-                parent=base_styles['Normal'],
-                fontSize=8,
-                textColor=colors.white,
-                alignment=TA_CENTER
-            ),
-            'Footer': ParagraphStyle(
-                'Footer',
-                parent=base_styles['Normal'],
-                fontSize=8,
-                textColor=self.COLORS['secondary'],
-                alignment=TA_CENTER
-            ),
-            'Timestamp': ParagraphStyle(
-                'Timestamp',
-                parent=base_styles['Normal'],
-                fontSize=9,
-                textColor=self.COLORS['accent'],
-                fontName='Helvetica-Oblique'
-            ),
-            'Important': ParagraphStyle(
-                'Important',
-                parent=base_styles['Normal'],
-                fontSize=10,
-                textColor=self.COLORS['danger'],
-                fontName='Helvetica-Bold',
-                spaceBefore=8,
-                spaceAfter=8,
-                borderWidth=1,
-                borderColor=self.COLORS['danger'],
-                borderPadding=6,
-                backColor=HexColor('#fff5f5')
-            ),
-            'PracticeHeader': ParagraphStyle(
-                'PracticeHeader',
-                parent=base_styles['Normal'],
-                fontSize=18,
-                textColor=colors.white,
-                spaceAfter=8,
-                alignment=TA_CENTER,
-                fontName='Helvetica-Bold'
-            ),
-            'AnswerSpace': ParagraphStyle(
-                'AnswerSpace',
-                parent=base_styles['Normal'],
-                fontSize=9,
-                textColor=HexColor('#888888'),
-                spaceBefore=2,
-                spaceAfter=6,
-                leftIndent=20,
-                fontName='Helvetica-Oblique'
-            ),
-        }
+    def __init__(self, academy: str, date: str, website: str):
+        self.academy = academy
+        self.date = date
+        self.website = website
 
-        return custom_styles
+    def draw(self, canvas, doc):
+        canvas.saveState()
+        w, h = A4
 
-    def _create_academy_logo_banner(self) -> List:
-        """Create Current Affairs Academy branding banner."""
-        elements = []
+        # ── Top header bar ──
+        canvas.setFillColor(C['navy'])
+        canvas.rect(1.5*cm, h - 1.2*cm, w - 3*cm, 0.7*cm, fill=1, stroke=0)
 
-        # Top banner with Academy colors
-        banner_data = [['', ACADEMY_NAME, '']]
-        banner_table = Table(banner_data, colWidths=[1*cm, 15*cm, 1*cm])
-        banner_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['academy_primary']),
-            ('TEXTCOLOR', (1, 0), (1, 0), colors.white),
-            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-            ('FONTNAME', (1, 0), (1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (1, 0), (1, 0), 22),
-            ('TOPPADDING', (0, 0), (-1, -1), 14),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
-        ]))
-        elements.append(banner_table)
+        canvas.setFont('Helvetica-Bold', 8.5)
+        canvas.setFillColor(colors.white)
+        canvas.drawString(1.7*cm, h - 0.85*cm, self.academy.upper())
 
-        # Gold accent strip
-        accent_data = [['', ACADEMY_TAGLINE, '']]
-        accent_table = Table(accent_data, colWidths=[1*cm, 15*cm, 1*cm])
-        accent_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['academy_secondary']),
-            ('TEXTCOLOR', (1, 0), (1, 0), HexColor('#FFD700')),
-            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-            ('FONTNAME', (1, 0), (1, 0), 'Helvetica-Oblique'),
-            ('FONTSIZE', (1, 0), (1, 0), 9),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
+        canvas.setFont('Helvetica', 8)
+        canvas.drawRightString(w - 1.7*cm, h - 0.85*cm, f"{self.date}  |  {self.website}")
+
+        # Gold underline
+        canvas.setStrokeColor(C['gold'])
+        canvas.setLineWidth(1.5)
+        canvas.line(1.5*cm, h - 1.25*cm, w - 1.5*cm, h - 1.25*cm)
+
+        # ── Bottom footer bar ──
+        canvas.setStrokeColor(C['border'])
+        canvas.setLineWidth(0.5)
+        canvas.line(1.5*cm, 1.6*cm, w - 1.5*cm, 1.6*cm)
+
+        canvas.setFont('Helvetica', 7.5)
+        canvas.setFillColor(C['muted'])
+        canvas.drawCentredString(w / 2, 1.2*cm, self.academy + "  •  " + self.website)
+        canvas.drawRightString(w - 1.5*cm, 1.2*cm, f"Page {doc.page}")
+
+        canvas.restoreState()
+
+
+# ---------------------------------------------------------------------------
+# Element builders
+# ---------------------------------------------------------------------------
+
+def _horizontal_rule(color=C['border'], thickness=0.5) -> HRFlowable:
+    return HRFlowable(width="100%", thickness=thickness, color=color,
+                      spaceBefore=4, spaceAfter=4)
+
+
+def _topic_header_table(title: str, tags: str, styles) -> Table:
+    """Dark navy header band for topic (full page width)."""
+    title_para = Paragraph(title.upper(), styles['TopicTitle'])
+    tag_para = Paragraph(
+        f"<font size='8' color='#FFD700'>{tags}</font>",
+        styles['TopicTitle']
+    )
+    data = [[title_para, tag_para]]
+    t = Table(data, colWidths=[11.5*cm, 5.5*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), C['navy']),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING',  (0, 0), (0, 0), 8),
+        ('RIGHTPADDING', (1, 0), (1, 0), 8),
+        ('ALIGN',        (1, 0), (1, 0), 'RIGHT'),
+    ]))
+    return t
+
+
+def _trigger_box(text: str, styles) -> Table:
+    """Italic context sentence in a light-blue box."""
+    para = Paragraph(text, styles['Trigger'])
+    t = Table([[para]], colWidths=[17*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), C['bg_blue']),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+        ('TOPPADDING',    (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BOX',           (0, 0), (-1, -1), 0.8, C['navy_light']),
+    ]))
+    return t
+
+
+def _section_header(text: str, styles, color_key='SecHeader') -> Paragraph:
+    return Paragraph(text, styles[color_key])
+
+
+def _bullet(text: str, styles, level=1) -> Paragraph:
+    """Return a Paragraph with proper bullet prefix for the given level."""
+    prefixes = {1: '▸ ', 2: '♦ ', 3: '→ '}
+    prefix = prefixes.get(level, '• ')
+    return Paragraph(f"{prefix}{text}", styles[f'Bullet{level}'])
+
+
+def _two_column_section(
+    left_heading: str,
+    left_items: List[str],
+    right_heading: str,
+    right_items: List[str],
+    styles,
+    left_color=C['red'],
+    right_color=C['navy'],
+) -> Table:
+    """
+    Render challenges (left) and suggestions (right) in two equal columns,
+    matching the Drishti IAS format.
+    """
+
+    def build_col(heading, items, hdr_color):
+        elems = []
+        # Column header band
+        hdr = Table([[Paragraph(f"<b>{heading}</b>", styles['TH'])]],
+                    colWidths=[8.2*cm])
+        hdr.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), hdr_color),
+            ('TOPPADDING',    (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
-        elements.append(accent_table)
-        elements.append(Spacer(1, 0.2*inch))
+        elems.append(hdr)
+        # Items
+        for item in items:
+            # Check for sub-structure: items may be "Main: sub" or plain strings
+            elems.append(Paragraph(f"• {item}", styles['ColBullet']))
+        return elems
 
-        return elements
+    left_col  = build_col(left_heading,  left_items,  left_color)
+    right_col = build_col(right_heading, right_items, right_color)
+
+    # Pad to equal length
+    max_len = max(len(left_col), len(right_col))
+    while len(left_col)  < max_len: left_col.append(Spacer(1, 2))
+    while len(right_col) < max_len: right_col.append(Spacer(1, 2))
+
+    rows = [[left_col[i], right_col[i]] for i in range(max_len)]
+    t = Table(rows, colWidths=[8.3*cm, 8.7*cm])
+    t.setStyle(TableStyle([
+        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('TOPPADDING',    (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LINEAFTER',     (0, 0), (0, -1), 0.5, C['border']),
+    ]))
+    return t
+
+
+def _comparison_table(data: Dict, styles) -> Table:
+    """
+    data = {
+        'headers': ['Aspect', 'Freebies', 'Welfare'],
+        'rows': [['Definition', '...', '...'], ...],
+        'col_widths': [3*cm, 7*cm, 7*cm]  # optional
+    }
+    """
+    headers = data.get('headers', [])
+    rows    = data.get('rows', [])
+    widths  = data.get('col_widths', None)
+
+    if not headers or not rows:
+        return Spacer(1, 1)
+
+    n_cols = len(headers)
+    if widths is None:
+        total = 17 * cm
+        widths = [total / n_cols] * n_cols
+
+    table_data = [[Paragraph(h, styles['TH']) for h in headers]]
+    for row in rows:
+        table_data.append([Paragraph(str(cell), styles['TD']) for cell in row])
+
+    t = Table(table_data, colWidths=widths)
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, 0), C['navy']),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, C['bg_light']]),
+        ('GRID',          (0, 0), (-1, -1), 0.4, C['border']),
+        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 5),
+        ('FONTNAME',      (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('TEXTCOLOR',     (0, 1), (0, -1), C['navy']),
+    ]))
+    return t
+
+
+def _key_judgements_box(judgements: List[str], styles) -> Table:
+    """Yellow box listing key SC judgements."""
+    elems = [Paragraph("<b>Key SC / Court Judgements:</b>", styles['SecHeader'])]
+    for j in judgements:
+        elems.append(Paragraph(f"♦ {j}", styles['JudgeItem']))
+    t = Table([[elems]], colWidths=[17*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), C['bg_yellow']),
+        ('BOX',           (0, 0), (-1, -1), 0.8, C['gold']),
+        ('TOPPADDING',    (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+    ]))
+    return t
+
+
+def _key_facts_box(facts: List[str], label: str, styles) -> Table:
+    """Green sidebar box for key facts / news hooks."""
+    elems = [Paragraph(f"<b>{label}</b>", styles['SecHeader'])]
+    for f in facts:
+        elems.append(Paragraph(f"ª {f}", styles['FactItem']))
+    t = Table([[elems]], colWidths=[17*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), C['bg_green']),
+        ('BOX',           (0, 0), (-1, -1), 0.8, HexColor('#38A169')),
+        ('TOPPADDING',    (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+    ]))
+    return t
+
+
+def _terms_table(terms: Dict[str, str], styles) -> Table:
+    """Two-column term ↔ definition table."""
+    if not terms:
+        return Spacer(1, 1)
+    rows = [[Paragraph('<b>Term / Concept</b>', styles['TH']),
+             Paragraph('<b>Definition / Explanation</b>', styles['TH'])]]
+    for term, defn in terms.items():
+        rows.append([
+            Paragraph(term, styles['TDLeft']),
+            Paragraph(defn, styles['TD'])
+        ])
+    t = Table(rows, colWidths=[4.5*cm, 12.5*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, 0), C['navy_light']),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, C['bg_light']]),
+        ('GRID',          (0, 0), (-1, -1), 0.4, C['border']),
+        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 6),
+        ('BACKGROUND',    (0, 1), (0, -1), C['bg_blue']),
+    ]))
+    return t
+
+
+# ---------------------------------------------------------------------------
+# Main generator class
+# ---------------------------------------------------------------------------
+
+class PDFNotesGenerator:
+    """
+    Generates Drishti IAS SARAANSH-style PDF study notes.
+
+    Structure per topic:
+      ┌─────────────────────────────────────────────────────────────┐
+      │  [TOPIC TITLE — navy band]          [UPSC Tags — gold]      │
+      ├─────────────────────────────────────────────────────────────┤
+      │  [Trigger line — light blue box]                            │
+      │  About / What is it                                         │
+      │    ▸ bullet …   ♦ sub-bullet …                             │
+      │  Key Provisions / Legal Framework                           │
+      │    ▸ …                                                      │
+      │  [Sub-sections as needed]                                   │
+      │  [Key SC Judgements — yellow box]                           │
+      │  ┌──────────────────┬───────────────────────────────────┐  │
+      │  │  Challenges       │  Suggestions / Way Forward        │  │
+      │  └──────────────────┴───────────────────────────────────┘  │
+      │  [Comparison table if any]                                  │
+      │  [Key facts green box]                                      │
+      │  [Important Terms table]                                    │
+      │  [Practice Questions]                                       │
+      └─────────────────────────────────────────────────────────────┘
+    """
+
+    def __init__(self, output_dir: str = "output/notes"):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.styles = _make_styles()
+        logger.info(f"PDFNotesGenerator (Drishti style) ready → {self.output_dir}")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def generate_notes(
         self,
@@ -326,779 +532,507 @@ class PDFNotesGenerator:
         include_images: bool = True,
         include_questions: bool = True
     ) -> str:
-        """
-        Generate comprehensive PDF study notes with Academy branding.
+        date_str  = datetime.now().strftime("%Y%m%d")
+        safe      = "".join(c for c in study_note.title if c.isalnum() or c in ' -_')[:50]
+        filename  = f"{date_str}_{safe.replace(' ', '_')}_Notes.pdf"
+        out_path  = self.output_dir / filename
 
-        Args:
-            study_note: StudyNote object with all content
-            include_images: Whether to include images
-            include_questions: Whether to include practice questions
+        logger.info(f"Generating Drishti-style PDF: {filename}")
 
-        Returns:
-            Path to generated PDF file
-        """
-        date_str = datetime.now().strftime("%Y%m%d")
-        safe_title = "".join(c for c in study_note.title if c.isalnum() or c in ' -_')[:50]
-        filename = f"{date_str}_{safe_title.replace(' ', '_')}_CurrentAffairsAcademy.pdf"
-        output_path = self.output_dir / filename
-
-        logger.info(f"Generating PDF notes: {filename}")
+        hf = _HeaderFooterCanvas(ACADEMY_NAME, study_note.date, WEBSITE)
 
         doc = SimpleDocTemplate(
-            str(output_path),
+            str(out_path),
             pagesize=A4,
             rightMargin=1.5*cm,
             leftMargin=1.5*cm,
-            topMargin=1.5*cm,
-            bottomMargin=2*cm
+            topMargin=1.8*cm,     # room for header
+            bottomMargin=2.0*cm,  # room for footer
         )
 
         story = []
 
-        # Academy Logo Banner (appears on every section start)
-        story.extend(self._create_academy_logo_banner())
+        # ── Cover / title page ──
+        story.extend(self._cover_page(study_note))
 
-        # Title Page
-        story.extend(self._create_title_page(study_note))
+        # ── Table of contents ──
+        story.extend(self._toc(study_note))
 
-        # Table of Contents
-        story.extend(self._create_toc(study_note))
-
-        # Detailed Topic Sections
+        # ── Each topic ──
         for i, topic in enumerate(study_note.topics, 1):
-            story.extend(self._create_topic_section(
-                topic, i, include_images, include_questions
-            ))
+            story.extend(self._topic_section(topic, i, include_questions))
 
-        # Summary Section
-        story.extend(self._create_summary_section(study_note))
+        # ── Quick revision / key facts ──
+        story.extend(self._quick_revision(study_note))
 
-        # Quick Revision Section
-        story.extend(self._create_quick_revision(study_note))
-
-        # Consolidated 20 Practice Questions Section
+        # ── Consolidated practice questions ──
         if include_questions:
-            story.extend(self._create_consolidated_questions_section(study_note))
+            story.extend(self._questions_section(study_note))
 
-        # Resources Section
-        if study_note.additional_resources:
-            story.extend(self._create_resources_section(study_note))
+        # ── Back page ──
+        story.extend(self._back_page(study_note))
 
-        # Footer page
-        story.extend(self._create_footer_page(study_note))
+        doc.build(story, onFirstPage=hf.draw, onLaterPages=hf.draw)
+        logger.info(f"PDF saved: {out_path}")
+        return str(out_path)
 
-        try:
-            doc.build(story)
-            logger.info(f"PDF generated successfully: {output_path}")
-            return str(output_path)
-        except Exception as e:
-            logger.error(f"Failed to generate PDF: {e}")
-            raise
+    # ------------------------------------------------------------------
+    # Cover page
+    # ------------------------------------------------------------------
 
-    def _create_title_page(self, study_note: StudyNote) -> List:
-        """Create title page with Academy branding."""
-        elements = []
+    def _cover_page(self, note: StudyNote) -> List:
+        S = self.styles
+        elems = []
 
-        elements.append(Spacer(1, 0.3*inch))
+        elems.append(Spacer(1, 0.4*inch))
 
-        # Document type label
-        doc_type_data = [['DAILY CURRENT AFFAIRS - COMPLETE STUDY NOTES']]
-        doc_type_table = Table(doc_type_data, colWidths=[17*cm])
-        doc_type_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['academy_primary']),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 13),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        # Academy banner
+        banner = Table([[Paragraph(ACADEMY_NAME.upper(), S['MainTitle'])]],
+                       colWidths=[17*cm])
+        banner.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['navy']),
+            ('TEXTCOLOR',     (0, 0), (-1, -1), colors.white),
+            ('TOPPADDING',    (0, 0), (-1, -1), 14),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
         ]))
-        elements.append(doc_type_table)
-        elements.append(Spacer(1, 0.2*inch))
-
-        # Title
-        elements.append(Paragraph(study_note.title, self.styles['MainTitle']))
-
-        # Date
-        elements.append(Paragraph(
-            f"Date: {study_note.date}",
-            self.styles['SubTitle']
-        ))
-
-        elements.append(Spacer(1, 0.3*inch))
-
-        # Info box
-        total_questions = sum(len(t.practice_questions) for t in study_note.topics)
-        guaranteed_questions = max(20, total_questions)
-
-        info_data = [
-            ['Total Topics Covered', str(len(study_note.topics))],
-            ['Language', study_note.language],
-            ['Practice Questions', f"{guaranteed_questions}+ MCQ & Descriptive"],
-            ['Video Duration', f"{study_note.video_duration/60:.0f} min" if study_note.video_duration else "N/A"],
-            ['Content Type', 'Detailed (More than Video)'],
-        ]
-
-        info_table = Table(info_data, colWidths=[7*cm, 9*cm])
-        info_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), self.COLORS['academy_primary']),
-            ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
-            ('TEXTCOLOR', (1, 0), (1, -1), self.COLORS['dark']),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
-            ('TOPPADDING', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, self.COLORS['secondary']),
-            ('BACKGROUND', (1, 0), (1, -1), self.COLORS['light_blue']),
-            ('ROWBACKGROUNDS', (0, 0), (-1, -1),
-             [self.COLORS['academy_primary'], self.COLORS['academy_primary']]),
-        ]))
-        elements.append(info_table)
-
-        elements.append(Spacer(1, 0.3*inch))
-
-        # What's inside note
-        inside_text = """<b>What's inside this PDF:</b><br/>
-✔ <b>Complete detailed coverage</b> of all current affairs topics (more than the video)<br/>
-✔ <b>In-depth analysis</b> with background context and implications<br/>
-✔ <b>Important Terms</b> and their definitions for exam preparation<br/>
-✔ <b>UPSC Relevance</b> tags (Prelims / Mains / Both) for each topic<br/>
-✔ <b>Quick Revision</b> section with all key facts<br/>
-✔ <b>20+ Practice Questions</b> (MCQ + Descriptive) for self-assessment<br/>
-✔ <b>Previous Year Question</b> references where applicable"""
-
-        inside_table = Table([[Paragraph(inside_text, self.styles['BodyText'])]],
-                             colWidths=[17*cm])
-        inside_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['section_bg']),
-            ('BOX', (0, 0), (-1, -1), 1.5, self.COLORS['academy_primary']),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-            ('LEFTPADDING', (0, 0), (-1, -1), 12),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-        ]))
-        elements.append(inside_table)
-
-        elements.append(Spacer(1, 0.2*inch))
-
-        # Exam relevance summary
-        prelims_count = sum(
-            1 for t in study_note.topics
-            if t.upsc_relevance and t.upsc_relevance.exam_relevance.value in ['prelims', 'both']
-        )
-        mains_count = sum(
-            1 for t in study_note.topics
-            if t.upsc_relevance and t.upsc_relevance.exam_relevance.value in ['mains', 'both']
-        )
-
-        exam_data = [
-            ['Prelims Important', f"{prelims_count} topics", 'Mains Important', f"{mains_count} topics"]
-        ]
-        exam_table = Table(exam_data, colWidths=[4*cm, 4.5*cm, 4*cm, 4.5*cm])
-        exam_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, 0), self.COLORS['prelims']),
-            ('BACKGROUND', (2, 0), (2, 0), self.COLORS['mains']),
-            ('TEXTCOLOR', (0, 0), (0, 0), colors.white),
-            ('TEXTCOLOR', (2, 0), (2, 0), colors.white),
-            ('TEXTCOLOR', (1, 0), (1, 0), self.COLORS['prelims']),
-            ('TEXTCOLOR', (3, 0), (3, 0), self.COLORS['mains']),
-            ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (2, 0), (2, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (3, 0), (3, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, self.COLORS['light']),
-        ]))
-        elements.append(exam_table)
-
-        elements.append(PageBreak())
-        return elements
-
-    def _create_toc(self, study_note: StudyNote) -> List:
-        """Create table of contents."""
-        elements = []
-
-        elements.extend(self._create_academy_logo_banner())
-
-        elements.append(Paragraph(
-            "TABLE OF CONTENTS",
-            self.styles['TopicTitle']
-        ))
-        elements.append(Spacer(1, 0.2*inch))
-
-        toc_data = [['#', 'Topic', 'Subject', 'Exam']]
-        for i, topic in enumerate(study_note.topics, 1):
-            subject = topic.upsc_relevance.subject.value if topic.upsc_relevance else "Current Affairs"
-            exam = topic.upsc_relevance.exam_relevance.value.upper() if topic.upsc_relevance else "BOTH"
-            toc_data.append([
-                str(i),
-                topic.title[:55] + "..." if len(topic.title) > 55 else topic.title,
-                subject[:20],
-                exam
-            ])
-
-        # Add special sections to TOC
-        toc_data.append(['', 'Summary of Today\'s Current Affairs', '', ''])
-        toc_data.append(['', 'Quick Revision - Key Facts', '', ''])
-        toc_data.append(['', '20 Practice Questions', '', ''])
-
-        if toc_data:
-            toc_table = Table(toc_data, colWidths=[0.7*cm, 9*cm, 4.5*cm, 2.5*cm])
-            toc_table.setStyle(TableStyle([
-                # Header row
-                ('BACKGROUND', (0, 0), (-1, 0), self.COLORS['academy_primary']),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                # Data rows
-                ('TEXTCOLOR', (0, 1), (-1, -1), self.COLORS['dark']),
-                ('ALIGN', (0, 0), (0, -1), 'CENTER'),
-                ('ALIGN', (3, 0), (3, -1), 'CENTER'),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-                ('TOPPADDING', (0, 0), (-1, -1), 7),
-                ('LINEBELOW', (0, 0), (-1, -2), 0.5, self.COLORS['light']),
-                ('BACKGROUND', (2, 1), (2, -1), self.COLORS['light']),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1),
-                 [colors.white, self.COLORS['section_bg']]),
-                # Highlight special sections
-                ('FONTNAME', (1, -2), (1, -1), 'Helvetica-Bold'),
-                ('TEXTCOLOR', (1, -2), (1, -1), self.COLORS['academy_secondary']),
-                ('FONTNAME', (1, -3), (1, -3), 'Helvetica-Bold'),
-                ('TEXTCOLOR', (1, -3), (1, -3), self.COLORS['academy_secondary']),
-            ]))
-            elements.append(toc_table)
-
-        elements.append(PageBreak())
-        return elements
-
-    def _create_topic_section(
-        self,
-        topic: TopicNote,
-        topic_num: int,
-        include_images: bool,
-        include_questions: bool
-    ) -> List:
-        """Create a detailed topic section."""
-        elements = []
-
-        elements.extend(self._create_academy_logo_banner())
-
-        # Topic header
-        elements.append(Paragraph(
-            f"Topic {topic_num}: {topic.title}",
-            self.styles['TopicTitle']
-        ))
-
-        # UPSC Relevance tags
-        if topic.upsc_relevance:
-            elements.extend(self._create_relevance_tags(topic.upsc_relevance))
-
-        # Video timestamp if available
-        if topic.timestamp:
-            elements.append(Paragraph(
-                f"Video Timestamp: {topic.timestamp}",
-                self.styles['Timestamp']
-            ))
-
-        elements.append(Spacer(1, 0.15*inch))
-
-        # 1. Summary (detailed, not condensed)
-        elements.append(Paragraph("<b>Overview:</b>", self.styles['SectionHeader']))
-        elements.append(Paragraph(topic.summary, self.styles['DetailedText']))
-
-        # 2. Background Context (detailed content beyond video)
-        if topic.background_context:
-            elements.append(Paragraph(
-                "<b>Background & Context:</b>",
-                self.styles['SectionHeader']
-            ))
-            elements.append(Paragraph(
-                topic.background_context,
-                self.styles['DetailedText']
-            ))
-
-        # 3. Detailed Analysis
-        if topic.detailed_analysis:
-            elements.append(Paragraph(
-                "<b>Detailed Analysis:</b>",
-                self.styles['SectionHeader']
-            ))
-            elements.append(Paragraph(
-                topic.detailed_analysis,
-                self.styles['DetailedText']
-            ))
-
-        # 4. Key Points
-        if topic.key_points:
-            elements.append(Paragraph(
-                "<b>Key Points for Exam:</b>",
-                self.styles['SectionHeader']
-            ))
-            elements.extend(self._create_key_points_list(topic.key_points))
-
-        # 5. Implications & Significance
-        if topic.implications:
-            elements.append(Paragraph(
-                "<b>Implications & Significance:</b>",
-                self.styles['SectionHeader']
-            ))
-            elements.append(Paragraph(
-                topic.implications,
-                self.styles['DetailedText']
-            ))
-
-        # 6. Important Terms
-        if topic.important_terms:
-            elements.append(Paragraph(
-                "<b>Important Terms & Definitions:</b>",
-                self.styles['SectionHeader']
-            ))
-            elements.extend(self._create_terms_table(topic.important_terms))
-
-        # 7. Topic-level Practice Questions (mini set)
-        if include_questions and topic.practice_questions:
-            elements.append(Paragraph(
-                "<b>Practice Questions (This Topic):</b>",
-                self.styles['SectionHeader']
-            ))
-            for q in topic.practice_questions[:3]:
-                elements.append(Paragraph(
-                    f"Q: {q}",
-                    self.styles['Question']
-                ))
-                elements.append(Paragraph(
-                    "_" * 80,
-                    self.styles['AnswerSpace']
-                ))
-
-        # 8. Related Topics
-        if topic.related_topics:
-            elements.append(Paragraph(
-                "<b>Related Topics for Further Study:</b>",
-                self.styles['SectionHeader']
-            ))
-            related_text = " | ".join(topic.related_topics)
-            elements.append(Paragraph(related_text, self.styles['BodyText']))
-
-        elements.append(Spacer(1, 0.2*inch))
-        elements.append(HRFlowable(
-            width="100%",
-            thickness=1.5,
-            color=self.COLORS['academy_primary'],
-            spaceBefore=8,
-            spaceAfter=8
-        ))
-        elements.append(PageBreak())
-
-        return elements
-
-    def _create_relevance_tags(self, relevance: UPSCRelevance) -> List:
-        """Create UPSC relevance tags."""
-        elements = []
-
-        tags_info = []
-        tags_info.append(('Subject', relevance.subject.value, self.COLORS['academy_primary']))
-
-        if relevance.exam_relevance.value == 'prelims':
-            tags_info.append(('Exam', 'PRELIMS', self.COLORS['prelims']))
-        elif relevance.exam_relevance.value == 'mains':
-            tags_info.append(('Exam', 'MAINS', self.COLORS['mains']))
-        else:
-            tags_info.append(('Exam', 'PRELIMS + MAINS', self.COLORS['accent']))
-
-        if relevance.mains_paper:
-            tags_info.append(('Paper', relevance.mains_paper, self.COLORS['secondary']))
-
-        tag_cells = [f"{label}: {value}" for label, value, _ in tags_info]
-        tag_text = "  |  ".join(tag_cells)
-
-        elements.append(Paragraph(
-            f"<font color='#444444' size='9'><b>{tag_text}</b></font>",
-            self.styles['BodyText']
-        ))
-
-        return elements
-
-    def _create_key_points_list(self, key_points: List[KeyPoint]) -> List:
-        """Create formatted list of key points."""
-        elements = []
-
-        for i, kp in enumerate(key_points, 1):
-            point_text = f"<b>{i}.</b> {kp.text}"
-
-            if kp.dates:
-                point_text += f" <font color='#d69e2e'><b>[Date: {', '.join(kp.dates)}]</b></font>"
-
-            if kp.figures:
-                point_text += f" <font color='#38a169'><b>[Stats: {', '.join(kp.figures)}]</b></font>"
-
-            elements.append(Paragraph(point_text, self.styles['KeyPoint']))
-
-            if kp.related_facts:
-                for fact in kp.related_facts:
-                    elements.append(Paragraph(
-                        f"    ▸ {fact}",
-                        self.styles['BodyText']
-                    ))
-
-        return elements
-
-    def _create_terms_table(self, terms: Dict[str, str]) -> List:
-        """Create table of important terms."""
-        elements = []
-
-        term_data = [['Term / Concept', 'Definition / Explanation']]
-        for term, definition in terms.items():
-            term_data.append([term, definition])
-
-        if len(term_data) > 1:
-            term_table = Table(term_data, colWidths=[4.5*cm, 12.5*cm])
-            term_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), self.COLORS['academy_primary']),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-                ('TOPPADDING', (0, 0), (-1, -1), 7),
-                ('BACKGROUND', (0, 1), (0, -1), self.COLORS['section_bg']),
-                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-                ('TEXTCOLOR', (0, 1), (0, -1), self.COLORS['academy_primary']),
-                ('GRID', (0, 0), (-1, -1), 0.5, self.COLORS['secondary']),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('ROWBACKGROUNDS', (1, 1), (-1, -1), [colors.white, self.COLORS['light']]),
-            ]))
-            elements.append(term_table)
-
-        return elements
-
-    def _create_summary_section(self, study_note: StudyNote) -> List:
-        """Create overall summary section."""
-        elements = []
-
-        elements.extend(self._create_academy_logo_banner())
-
-        elements.append(Paragraph(
-            "SUMMARY - TODAY'S CURRENT AFFAIRS",
-            self.styles['TopicTitle']
-        ))
-        elements.append(Spacer(1, 0.15*inch))
-
-        for i, topic in enumerate(study_note.topics, 1):
-            summary_text = f"<b>{i}. {topic.title}</b><br/>{topic.summary[:350]}..."
-            summary_table = Table(
-                [[Paragraph(summary_text, self.styles['BodyText'])]],
-                colWidths=[17*cm]
-            )
-            summary_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['light_blue'] if i % 2 == 0 else colors.white),
-                ('BOX', (0, 0), (-1, -1), 0.5, self.COLORS['secondary']),
-                ('TOPPADDING', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-            ]))
-            elements.append(summary_table)
-            elements.append(Spacer(1, 0.1*inch))
-
-        elements.append(PageBreak())
-        return elements
-
-    def _create_quick_revision(self, study_note: StudyNote) -> List:
-        """Create quick revision section with all key facts."""
-        elements = []
-
-        elements.extend(self._create_academy_logo_banner())
-
-        elements.append(Paragraph(
-            "QUICK REVISION - KEY FACTS",
-            self.styles['TopicTitle']
-        ))
-        elements.append(Paragraph(
-            "<i>Use this section for last-minute revision before exams</i>",
-            self.styles['BodyText']
-        ))
-        elements.append(Spacer(1, 0.15*inch))
-
-        fact_num = 1
-        for topic in study_note.topics:
-            # Topic label
-            elements.append(Paragraph(
-                f"<b>{topic.title}</b>",
-                self.styles['SectionHeader']
-            ))
-            for kp in topic.key_points[:3]:  # Top 3 points per topic
-                elements.append(Paragraph(
-                    f"<b>{fact_num}.</b> {kp.text}",
-                    self.styles['KeyPoint']
-                ))
-                fact_num += 1
-
-        # Important numbers/statistics box
-        elements.append(Spacer(1, 0.2*inch))
-        elements.append(Paragraph(
-            "<b>Important Numbers & Statistics:</b>",
-            self.styles['SectionHeader']
-        ))
-
-        figures = []
-        for topic in study_note.topics:
-            for kp in topic.key_points:
-                figures.extend(kp.figures)
-
-        if figures:
-            figures_text = " | ".join(sorted(set(figures))[:20])
-            elements.append(Paragraph(figures_text, self.styles['BodyText']))
-        else:
-            elements.append(Paragraph(
-                "Refer to individual topic sections for statistics.",
-                self.styles['BodyText']
-            ))
-
-        elements.append(PageBreak())
-        return elements
-
-    def _create_consolidated_questions_section(self, study_note: StudyNote) -> List:
-        """
-        Create a consolidated section with 20 practice questions
-        covering all topics - MCQ and Descriptive formats.
-        """
-        elements = []
-
-        elements.extend(self._create_academy_logo_banner())
-
-        # Section header banner
-        header_data = [['PRACTICE QUESTIONS SECTION']]
-        header_table = Table(header_data, colWidths=[17*cm])
-        header_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['academy_secondary']),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 16),
-            ('TOPPADDING', (0, 0), (-1, -1), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-        ]))
-        elements.append(header_table)
-
-        subtitle_data = [['20 Questions | MCQ + Descriptive | Self-Assessment']]
-        subtitle_table = Table(subtitle_data, colWidths=[17*cm])
-        subtitle_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['academy_gold']),
-            ('TEXTCOLOR', (0, 0), (-1, -1), self.COLORS['dark']),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(subtitle_table)
-        elements.append(Spacer(1, 0.2*inch))
-
-        # Collect all questions from all topics
-        all_questions = []
-        for topic in study_note.topics:
-            for q in topic.practice_questions:
-                all_questions.append((q, topic.title))
-
-        # Generate additional questions if we have fewer than 20
-        generated_questions = self._generate_additional_questions(
-            study_note, all_questions
-        )
-        all_questions.extend(generated_questions)
-
-        # Ensure exactly 20 questions (or more if available)
-        questions_to_show = all_questions[:20] if len(all_questions) >= 20 else all_questions
-
-        # Part A: MCQ-style Questions (first 10)
-        mcq_questions = questions_to_show[:10]
-        desc_questions = questions_to_show[10:]
-
-        # Part A Header
-        part_a_data = [['PART A: Multiple Choice / Objective Questions (Q1 to Q10)']]
-        part_a_table = Table(part_a_data, colWidths=[17*cm])
-        part_a_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['academy_primary']),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ]))
-        elements.append(part_a_table)
-        elements.append(Spacer(1, 0.1*inch))
-
-        for i, (question, topic_name) in enumerate(mcq_questions, 1):
-            # Question number and topic tag
-            q_header = f"Q{i}. <font color='#666666' size='8'>[{topic_name[:30]}]</font>"
-            elements.append(Paragraph(q_header, self.styles['QuestionNumber']))
-            elements.append(Paragraph(question, self.styles['Question']))
-            elements.append(Paragraph(
-                "Answer: ____________________________________________",
-                self.styles['AnswerSpace']
-            ))
-            elements.append(Spacer(1, 0.05*inch))
-
-        elements.append(Spacer(1, 0.2*inch))
-
-        # Part B: Descriptive Questions (next 10)
-        part_b_data = [['PART B: Descriptive / Analytical Questions (Q11 to Q20)']]
-        part_b_table = Table(part_b_data, colWidths=[17*cm])
-        part_b_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['mains']),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ]))
-        elements.append(part_b_table)
-        elements.append(Spacer(1, 0.1*inch))
-
-        for i, (question, topic_name) in enumerate(desc_questions, 11):
-            q_header = f"Q{i}. <font color='#666666' size='8'>[{topic_name[:30]}]</font>"
-            elements.append(Paragraph(q_header, self.styles['QuestionNumber']))
-            elements.append(Paragraph(question, self.styles['Question']))
-            # Space for descriptive answer
-            for _ in range(3):
-                elements.append(Paragraph(
-                    "_" * 95,
-                    self.styles['AnswerSpace']
-                ))
-            elements.append(Spacer(1, 0.05*inch))
-
-        # If we have more than 20 questions, show the extras as bonus
-        bonus_questions = all_questions[20:]
-        if bonus_questions:
-            elements.append(Spacer(1, 0.2*inch))
-            bonus_data = [[f'BONUS QUESTIONS (Q21 to Q{20 + len(bonus_questions)})']]
-            bonus_table = Table(bonus_data, colWidths=[17*cm])
-            bonus_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['success']),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('TOPPADDING', (0, 0), (-1, -1), 7),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ]))
-            elements.append(bonus_table)
-            elements.append(Spacer(1, 0.1*inch))
-            for i, (question, topic_name) in enumerate(bonus_questions, 21):
-                q_header = f"Q{i}. <font color='#666666' size='8'>[{topic_name[:30]}]</font>"
-                elements.append(Paragraph(q_header, self.styles['QuestionNumber']))
-                elements.append(Paragraph(question, self.styles['Question']))
-                elements.append(Paragraph(
-                    "_" * 95,
-                    self.styles['AnswerSpace']
-                ))
-                elements.append(Spacer(1, 0.05*inch))
-
-        elements.append(PageBreak())
-        return elements
-
-    def _generate_additional_questions(
-        self,
-        study_note: StudyNote,
-        existing_questions: List
-    ) -> List:
-        """
-        Generate additional practice questions to reach 20 total.
-        Creates standard UPSC-style questions based on topic titles.
-        """
-        needed = max(0, 20 - len(existing_questions))
-        if needed == 0:
-            return []
-
-        additional = []
-        date = study_note.date
-
-        # Standard question templates for UPSC preparation
-        question_templates = [
-            ("Consider the following statements about {topic}:\n"
-             "1. Statement A related to {topic}\n"
-             "2. Statement B related to {topic}\n"
-             "Which of the above statements is/are correct?\n"
-             "(a) 1 only  (b) 2 only  (c) Both 1 and 2  (d) Neither 1 nor 2"),
-            "Discuss the significance of {topic} in the context of India's development agenda.",
-            "What are the key implications of {topic} for India's foreign policy?",
-            "Examine the constitutional provisions related to {topic}.",
-            "How does {topic} affect India's economic growth and development?",
-            "Critically analyze the government's approach towards {topic}.",
-            "What role does {topic} play in the context of sustainable development goals?",
-            "Discuss the historical evolution and current status of {topic}.",
-            "What are the challenges and opportunities associated with {topic}?",
-            "With reference to {topic}, explain the relevant international frameworks.",
-        ]
-
-        topic_cycle = [t.title for t in study_note.topics] * (needed // len(study_note.topics) + 2)
-
-        for i in range(needed):
-            topic_name = topic_cycle[i % len(topic_cycle)]
-            template = question_templates[i % len(question_templates)]
-            question = template.format(topic=topic_name[:40])
-            additional.append((question, topic_name))
-
-        return additional[:needed]
-
-    def _create_resources_section(self, study_note: StudyNote) -> List:
-        """Create additional resources section."""
-        elements = []
-
-        elements.append(Spacer(1, 0.3*inch))
-        elements.append(Paragraph(
-            "Additional Resources",
-            self.styles['SectionHeader']
-        ))
-
-        for resource in study_note.additional_resources:
-            elements.append(Paragraph(f"• {resource}", self.styles['BodyText']))
-
-        return elements
-
-    def _create_footer_page(self, study_note: StudyNote) -> List:
-        """Create final footer page with Academy branding."""
-        elements = []
-
-        elements.extend(self._create_academy_logo_banner())
-
-        elements.append(Spacer(1, 0.5*inch))
-
-        footer_content = f"""
-<b>Thank you for studying with {ACADEMY_NAME}!</b><br/><br/>
-This PDF covers all the current affairs from {study_note.date} in complete detail.<br/>
-The video version covers key highlights — this PDF gives you the full picture.<br/><br/>
-<b>Keep Learning. Keep Growing.</b><br/><br/>
-{ACADEMY_TAGLINE}<br/><br/>
-<font size="8" color="#888888">
-Generated by Current Affairs Academy AI System | {datetime.now().strftime('%B %d, %Y')}
-</font>
-"""
-        footer_table = Table(
-            [[Paragraph(footer_content, self.styles['SubTitle'])]],
+        elems.append(banner)
+
+        # Tagline strip
+        tag_row = Table(
+            [[Paragraph(ACADEMY_TAGLINE, S['SubTitle'])]],
             colWidths=[17*cm]
         )
-        footer_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), self.COLORS['section_bg']),
-            ('BOX', (0, 0), (-1, -1), 2, self.COLORS['academy_primary']),
-            ('TOPPADDING', (0, 0), (-1, -1), 20),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
-            ('LEFTPADDING', (0, 0), (-1, -1), 20),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 20),
+        tag_row.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['red']),
+            ('TEXTCOLOR',     (0, 0), (-1, -1), C['gold']),
+            ('TOPPADDING',    (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
-        elements.append(footer_table)
+        elems.append(tag_row)
 
-        return elements
+        elems.append(Spacer(1, 0.25*inch))
+
+        # Doc-type label
+        dtype = Table(
+            [[Paragraph("DAILY CURRENT AFFAIRS — COMPLETE STUDY NOTES",
+                        S['MainTitle'])]],
+            colWidths=[17*cm]
+        )
+        dtype.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['navy_light']),
+            ('TEXTCOLOR',     (0, 0), (-1, -1), colors.white),
+            ('TOPPADDING',    (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+        ]))
+        elems.append(dtype)
+        elems.append(Spacer(1, 0.15*inch))
+
+        # Date + title
+        elems.append(Paragraph(note.title, S['MainTitle']))
+        elems.append(Paragraph(note.date, S['SubTitle']))
+        elems.append(Spacer(1, 0.2*inch))
+
+        # Info grid
+        total_q = sum(len(t.practice_questions) for t in note.topics)
+        info = [
+            ['Topics Covered',     str(len(note.topics))],
+            ['Language',           note.language],
+            ['Practice Questions', f"{max(20, total_q)}+ MCQ & Descriptive"],
+            ['Content Type',       'Detailed — More than video'],
+        ]
+        info_t = Table(info, colWidths=[6*cm, 11*cm])
+        info_t.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (0, -1), C['navy']),
+            ('TEXTCOLOR',     (0, 0), (0, -1), colors.white),
+            ('FONTNAME',      (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('BACKGROUND',    (1, 0), (1, -1), C['bg_blue']),
+            ('TEXTCOLOR',     (1, 0), (1, -1), C['dark']),
+            ('FONTSIZE',      (0, 0), (-1, -1), 9.5),
+            ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+            ('GRID',          (0, 0), (-1, -1), 0.5, C['border']),
+        ]))
+        elems.append(info_t)
+        elems.append(Spacer(1, 0.2*inch))
+
+        # What's inside box
+        inside = (
+            "<b>What's inside this PDF:</b><br/>"
+            "✔ <b>Structured topic-wise notes</b> in Drishti IAS style<br/>"
+            "✔ <b>Trigger context</b> for each topic — why it's in the news<br/>"
+            "✔ <b>About / Definition</b> → Key Provisions → Sub-sections<br/>"
+            "✔ <b>Challenges ↔ Suggestions</b> in two-column layout<br/>"
+            "✔ <b>Key SC Judgements</b> and landmark case references<br/>"
+            "✔ <b>Comparison Tables</b> (where applicable)<br/>"
+            "✔ <b>Important Terms</b> glossary for each topic<br/>"
+            "✔ <b>20+ Practice Questions</b> (MCQ + Descriptive)"
+        )
+        inside_t = Table(
+            [[Paragraph(inside, S['Body'])]],
+            colWidths=[17*cm]
+        )
+        inside_t.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['bg_light']),
+            ('BOX',           (0, 0), (-1, -1), 1.2, C['navy']),
+            ('TOPPADDING',    (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
+        ]))
+        elems.append(inside_t)
+
+        elems.append(PageBreak())
+        return elems
+
+    # ------------------------------------------------------------------
+    # Table of contents
+    # ------------------------------------------------------------------
+
+    def _toc(self, note: StudyNote) -> List:
+        S = self.styles
+        elems = []
+
+        elems.append(
+            _topic_header_table("TABLE OF CONTENTS", "", S)
+        )
+        elems.append(Spacer(1, 0.15*inch))
+
+        rows = [
+            [Paragraph('<b>#</b>', S['TH']),
+             Paragraph('<b>Topic</b>', S['TH']),
+             Paragraph('<b>Subject</b>', S['TH']),
+             Paragraph('<b>Exam</b>', S['TH'])]
+        ]
+        for i, t in enumerate(note.topics, 1):
+            tag_parts = t.upsc_tags.split('|') if t.upsc_tags else ['', '', '']
+            subject = tag_parts[1].strip() if len(tag_parts) > 1 else ''
+            exam    = tag_parts[2].strip() if len(tag_parts) > 2 else 'Both'
+            title   = t.title[:60] + ('…' if len(t.title) > 60 else '')
+            rows.append([
+                Paragraph(str(i), S['Body']),
+                Paragraph(title,  S['Body']),
+                Paragraph(subject, S['Body']),
+                Paragraph(exam,   S['Body']),
+            ])
+
+        # Special sections
+        for label in ['Quick Revision', '20 Practice Questions']:
+            rows.append([Paragraph('', S['Body']),
+                         Paragraph(f"<b>{label}</b>", S['SecHeader']),
+                         Paragraph('', S['Body']),
+                         Paragraph('', S['Body'])])
+
+        toc_t = Table(rows, colWidths=[1*cm, 10*cm, 4*cm, 2*cm])
+        toc_t.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, 0), C['navy']),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -3), [colors.white, C['bg_light']]),
+            ('BACKGROUND',    (0, -2), (-1, -1), C['bg_yellow']),
+            ('GRID',          (0, 0), (-1, -1), 0.4, C['border']),
+            ('TOPPADDING',    (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+            ('ALIGN',         (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN',         (3, 0), (3, -1), 'CENTER'),
+        ]))
+        elems.append(toc_t)
+        elems.append(PageBreak())
+        return elems
+
+    # ------------------------------------------------------------------
+    # Topic section — the heart of the Drishti style
+    # ------------------------------------------------------------------
+
+    def _topic_section(self, topic: TopicNote, num: int, include_qs: bool) -> List:
+        S  = self.styles
+        el = []
+
+        # ── 1. Header band ──────────────────────────────────────────────
+        el.append(_topic_header_table(
+            f"Topic {num}: {topic.title}",
+            topic.upsc_tags,
+            S
+        ))
+
+        # ── 2. Trigger line ─────────────────────────────────────────────
+        if topic.trigger_line:
+            el.append(Spacer(1, 0.06*inch))
+            el.append(_trigger_box(topic.trigger_line, S))
+
+        el.append(Spacer(1, 0.08*inch))
+
+        # ── 3. What is it / About ────────────────────────────────────────
+        if topic.what_is_it:
+            el.append(_section_header("What is it / About:", S))
+            el.append(Paragraph(topic.what_is_it, S['Body']))
+            el.append(Spacer(1, 0.04*inch))
+
+        # ── 4. Key Provisions ────────────────────────────────────────────
+        if topic.key_provisions:
+            el.append(_section_header("Key Provisions / Legal Framework:", S))
+            for prov in topic.key_provisions:
+                # Support nested: "Main point: sub a, sub b"
+                if '\n' in prov:
+                    lines = prov.split('\n')
+                    el.append(_bullet(lines[0], S, level=1))
+                    for sub in lines[1:]:
+                        if sub.strip():
+                            el.append(_bullet(sub.strip(), S, level=2))
+                else:
+                    el.append(_bullet(prov, S, level=1))
+            el.append(Spacer(1, 0.04*inch))
+
+        # ── 5. Sub-sections (About / Context / Types / Impact …) ─────────
+        for sec in topic.sub_sections:
+            heading = sec.get('heading', '')
+            points  = sec.get('points', [])
+            subs    = sec.get('sub_points', {})  # {point_text: [sub-bullets]}
+
+            if heading:
+                el.append(_section_header(heading + ":", S))
+
+            for pt in points:
+                el.append(_bullet(pt, S, level=1))
+                for sub in subs.get(pt, []):
+                    el.append(_bullet(sub, S, level=2))
+
+            el.append(Spacer(1, 0.04*inch))
+
+        # ── 6. Key Judgements box ────────────────────────────────────────
+        if topic.key_judgements:
+            el.append(_key_judgements_box(topic.key_judgements, S))
+            el.append(Spacer(1, 0.08*inch))
+
+        # ── 7. Challenges ↔ Suggestions two-column ───────────────────────
+        if topic.challenges or topic.suggestions:
+            el.append(_section_header("Challenges & Way Forward:", S, 'SecHeaderRed'))
+            el.append(Spacer(1, 0.04*inch))
+            el.append(_two_column_section(
+                "Challenges",   topic.challenges,
+                "Suggestions / Way Forward", topic.suggestions,
+                S
+            ))
+            el.append(Spacer(1, 0.08*inch))
+
+        # ── 8. Comparison table ──────────────────────────────────────────
+        if topic.comparison_table:
+            el.append(_section_header("Comparison:", S))
+            el.append(Spacer(1, 0.04*inch))
+            el.append(_comparison_table(topic.comparison_table, S))
+            el.append(Spacer(1, 0.08*inch))
+
+        # ── 9. Key facts green box ───────────────────────────────────────
+        if topic.key_facts_box:
+            el.append(_key_facts_box(topic.key_facts_box, "Key Facts & Data Points:", S))
+            el.append(Spacer(1, 0.08*inch))
+
+        # ── 10. Important Terms table ─────────────────────────────────────
+        if topic.important_terms:
+            el.append(_section_header("Important Terms & Definitions:", S))
+            el.append(_terms_table(topic.important_terms, S))
+            el.append(Spacer(1, 0.08*inch))
+
+        # ── 11. Practice Questions (per-topic mini set) ───────────────────
+        if include_qs and topic.practice_questions:
+            el.append(_section_header("Practice Questions:", S, 'SecHeaderRed'))
+            for q in topic.practice_questions[:3]:
+                el.append(Paragraph(f"Q. {q}", S['QText']))
+                el.append(Paragraph(
+                    "Answer: " + "_" * 70,
+                    S['QAns']
+                ))
+
+        el.append(Spacer(1, 0.1*inch))
+        el.append(_horizontal_rule(C['navy'], 1.0))
+        el.append(PageBreak())
+        return el
+
+    # ------------------------------------------------------------------
+    # Quick revision
+    # ------------------------------------------------------------------
+
+    def _quick_revision(self, note: StudyNote) -> List:
+        S  = self.styles
+        el = []
+
+        el.append(_topic_header_table("QUICK REVISION — KEY FACTS", "", S))
+        el.append(Paragraph(
+            "<i>Use this section for last-minute revision before exams</i>",
+            S['Trigger']
+        ))
+        el.append(Spacer(1, 0.1*inch))
+
+        n = 1
+        for topic in note.topics:
+            el.append(_section_header(topic.title, S))
+            # Pull key facts from key_facts_box + first few challenge/suggestion bullets
+            facts = list(topic.key_facts_box)[:4]
+            if not facts:
+                # Fallback: first provision
+                facts = topic.key_provisions[:3] if topic.key_provisions else []
+            for f in facts:
+                el.append(Paragraph(f"<b>{n}.</b> {f}", S['Bullet1']))
+                n += 1
+            el.append(Spacer(1, 0.04*inch))
+
+        el.append(PageBreak())
+        return el
+
+    # ------------------------------------------------------------------
+    # Consolidated 20 questions
+    # ------------------------------------------------------------------
+
+    def _questions_section(self, note: StudyNote) -> List:
+        S  = self.styles
+        el = []
+
+        el.append(_topic_header_table("PRACTICE QUESTIONS", "20 Questions | MCQ + Descriptive", S))
+        el.append(Spacer(1, 0.1*inch))
+
+        # Gather all questions
+        all_q: List[tuple] = []  # (question, topic_title)
+        for t in note.topics:
+            for q in t.practice_questions:
+                all_q.append((q, t.title))
+
+        # Top-up to 20 with generic templates
+        all_q = self._topup_questions(all_q, note, 20)
+        mcq   = all_q[:10]
+        desc  = all_q[10:20]
+        bonus = all_q[20:]
+
+        # Part A
+        pa = Table(
+            [[Paragraph("PART A — Objective / MCQ Questions (Q1–Q10)", S['TH'])]],
+            colWidths=[17*cm]
+        )
+        pa.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['navy']),
+            ('TOPPADDING',    (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ]))
+        el.append(pa)
+        el.append(Spacer(1, 0.06*inch))
+
+        for i, (q, topic) in enumerate(mcq, 1):
+            el.append(Paragraph(
+                f"Q{i}.  <font color='#666666' size='8'>[{topic[:35]}]</font>",
+                S['QNum']
+            ))
+            el.append(Paragraph(q, S['QText']))
+            el.append(Paragraph("Answer: " + "_" * 65, S['QAns']))
+
+        el.append(Spacer(1, 0.15*inch))
+
+        # Part B
+        pb = Table(
+            [[Paragraph("PART B — Descriptive / Analytical Questions (Q11–Q20)", S['TH'])]],
+            colWidths=[17*cm]
+        )
+        pb.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['mains']),
+            ('TOPPADDING',    (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ]))
+        el.append(pb)
+        el.append(Spacer(1, 0.06*inch))
+
+        for i, (q, topic) in enumerate(desc, 11):
+            el.append(Paragraph(
+                f"Q{i}.  <font color='#666666' size='8'>[{topic[:35]}]</font>",
+                S['QNum']
+            ))
+            el.append(Paragraph(q, S['QText']))
+            for _ in range(3):
+                el.append(Paragraph("_" * 90, S['QAns']))
+            el.append(Spacer(1, 0.04*inch))
+
+        # Bonus
+        if bonus:
+            bh = Table(
+                [[Paragraph(f"BONUS QUESTIONS (Q21–Q{20+len(bonus)})", S['TH'])]],
+                colWidths=[17*cm]
+            )
+            bh.setStyle(TableStyle([
+                ('BACKGROUND',    (0, 0), (-1, -1), HexColor('#38A169')),
+                ('TOPPADDING',    (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+            ]))
+            el.append(Spacer(1, 0.1*inch))
+            el.append(bh)
+            el.append(Spacer(1, 0.06*inch))
+            for i, (q, topic) in enumerate(bonus, 21):
+                el.append(Paragraph(
+                    f"Q{i}.  <font color='#666666' size='8'>[{topic[:35]}]</font>",
+                    S['QNum']
+                ))
+                el.append(Paragraph(q, S['QText']))
+                el.append(Paragraph("_" * 90, S['QAns']))
+
+        el.append(PageBreak())
+        return el
+
+    # ------------------------------------------------------------------
+    # Back page
+    # ------------------------------------------------------------------
+
+    def _back_page(self, note: StudyNote) -> List:
+        S = self.styles
+        msg = (
+            f"<b>Thank you for studying with {ACADEMY_NAME}!</b><br/><br/>"
+            f"This PDF covers all current affairs from <b>{note.date}</b> in Drishti IAS style.<br/>"
+            "The video covers key highlights — this PDF gives you the complete picture.<br/><br/>"
+            "<b>Keep Learning. Keep Growing.</b><br/><br/>"
+            f"<font size='8' color='#718096'>{ACADEMY_TAGLINE}</font><br/>"
+            f"<font size='7.5' color='#718096'>Generated: {datetime.now().strftime('%B %d, %Y')}</font>"
+        )
+        t = Table([[Paragraph(msg, S['SubTitle'])]], colWidths=[17*cm])
+        t.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C['bg_light']),
+            ('BOX',           (0, 0), (-1, -1), 2, C['navy']),
+            ('TOPPADDING',    (0, 0), (-1, -1), 25),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 25),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 20),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 20),
+        ]))
+        return [t]
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _topup_questions(existing: List, note: StudyNote, target: int) -> List:
+        """Add generic UPSC-style questions until we reach `target`."""
+        templates = [
+            "Consider the statements about {t}:\n1. Statement A  2. Statement B\n"
+            "Which are correct? (a) 1 only  (b) 2 only  (c) Both  (d) Neither",
+            "Discuss the significance of {t} in India's development agenda.",
+            "What are the constitutional provisions relevant to {t}?",
+            "Examine the government's approach towards {t}. (150 words)",
+            "How does {t} affect India's socio-economic growth?",
+            "What are the challenges and opportunities in {t}?",
+            "Trace the evolution of policy on {t} in post-independent India.",
+            "Critically analyse India's stand on {t} in the international arena.",
+            "What are the suggestions for improving the situation regarding {t}?",
+            "With reference to recent events, explain the relevance of {t}.",
+        ]
+        topics = [tp.title for tp in note.topics]
+        needed = max(0, target - len(existing))
+        extra  = []
+        for i in range(needed):
+            topic = topics[i % len(topics)]
+            tmpl  = templates[i % len(templates)]
+            extra.append((tmpl.format(t=topic[:40]), topic))
+        return existing + extra
+
+    # ------------------------------------------------------------------
+    # Compatibility: generate from video composer's script_data
+    # ------------------------------------------------------------------
 
     def generate_from_extracted_content(
         self,
@@ -1107,129 +1041,138 @@ Generated by Current Affairs Academy AI System | {datetime.now().strftime('%B %d
         date: str = None,
         video_duration: float = 0.0
     ) -> str:
-        """
-        Generate PDF from list of ExtractedContent objects.
-
-        Args:
-            extracted_contents: List of extracted content
-            title: Title for the notes
-            date: Date string
-            video_duration: Video duration in seconds
-
-        Returns:
-            Path to generated PDF
-        """
+        """Convert ExtractedContent list → StudyNote → PDF."""
         date = date or datetime.now().strftime("%B %d, %Y")
-
         topics = []
-        for i, content in enumerate(extracted_contents):
-            timestamp = (
-                f"{(i * video_duration / len(extracted_contents) / 60):.0f}:00"
-                if video_duration else ""
-            )
 
-            # Build detailed_analysis from available content
-            detailed = getattr(content, 'detailed_analysis', '') or ''
-            if not detailed and hasattr(content, 'article') and content.article:
-                # Use article body as detailed content if available
-                article_body = getattr(content.article, 'content', '') or ''
-                detailed = article_body[:1500] if article_body else ''
+        for i, ec in enumerate(extracted_contents):
+            kp_texts = [kp.text for kp in (ec.key_points or [])]
+            terms    = dict(ec.important_terms or {})
+            subject  = ec.upsc_relevance.subject.value if ec.upsc_relevance else "Current Affairs"
+            exam     = ec.upsc_relevance.exam_relevance.value.upper() if ec.upsc_relevance else "BOTH"
+            paper    = ec.upsc_relevance.mains_paper if ec.upsc_relevance else "GS3"
+            ts       = (f"{(i * video_duration / max(len(extracted_contents),1) / 60):.0f}:00"
+                        if video_duration else "")
 
-            background = getattr(content, 'background_context', '') or ''
-            implications = getattr(content, 'implications', '') or ''
-
+            # Build a basic TopicNote from ExtractedContent
             topic = TopicNote(
-                title=content.article.title,
-                summary=content.summary,
-                key_points=content.key_points,
-                upsc_relevance=content.upsc_relevance,
-                important_terms=content.important_terms,
-                practice_questions=content.practice_questions,
-                related_topics=content.related_topics,
-                detailed_analysis=detailed,
-                background_context=background,
-                implications=implications,
-                timestamp=timestamp
+                title=ec.article.title,
+                trigger_line=ec.summary[:200] if ec.summary else "",
+                what_is_it=ec.summary or "",
+                key_provisions=[],
+                sub_sections=[{
+                    'heading': 'Key Points',
+                    'points': kp_texts,
+                    'sub_points': {}
+                }] if kp_texts else [],
+                challenges=[],
+                suggestions=[],
+                key_facts_box=[kp.text for kp in (ec.key_points or [])[:4]],
+                important_terms=terms,
+                practice_questions=list(ec.practice_questions or []),
+                upsc_tags=f"Current Affairs | {subject} | {exam} | {paper}",
+                timestamp=ts,
             )
             topics.append(topic)
 
-        study_note = StudyNote(
+        note = StudyNote(
             title=title,
             date=date,
             topics=topics,
             video_duration=video_duration
         )
+        return self.generate_notes(note)
 
-        return self.generate_notes(study_note)
 
+# ---------------------------------------------------------------------------
+# CLI test
+# ---------------------------------------------------------------------------
 
-# CLI interface for testing
 if __name__ == "__main__":
-    import argparse
+    print("\n=== Current Affairs Academy PDF Generator — Drishti IAS Style ===\n")
 
-    parser = argparse.ArgumentParser(description="PDF Notes Generator CLI")
-    parser.add_argument("--test", action="store_true", help="Run test generation")
+    test_topic = TopicNote(
+        title="Hate Speech and Hate Crime",
+        trigger_line=(
+            "SC raised concerns over hate crimes & speech, urging restraint while "
+            "hearing a plea for a legal framework to recognise hate-based offences."
+        ),
+        what_is_it=(
+            "Hate speech refers to words/actions intended to incite hatred against "
+            "groups based on race, ethnicity, gender, religion, sexual orientation, etc., "
+            "including speech or visuals that provoke fear or violence "
+            "(267th Law Commission Report, 2017).\n\n"
+            "Hate crime is a crime motivated by bias against race, colour, religion, "
+            "national origin, sexual orientation, gender, gender identity, or disability."
+        ),
+        key_provisions=[
+            "Art. 19(1)(a): Guarantees free speech; Art. 19(2): Permits reasonable restrictions "
+            "(public order, dignity, sovereignty, incitement of offences).",
+            "BNS 2023: Penalises promoting enmity between groups.",
+            "RPA 1951: Disqualifies candidates convicted of promoting communal disharmony.",
+            "SC/ST (Prevention of Atrocities) Act 1989: Punishes insults/humiliation of SC/ST members.",
+            "Protection of Civil Rights Act 1955: Penalises acts promoting untouchability.",
+        ],
+        sub_sections=[
+            {
+                'heading': 'Hate Crime — Legal Status',
+                'points': [
+                    "No specific legal definition in India.",
+                    "Provisions under BNS 2023 & SC/ST Act 1989 address mob lynching, caste-based violence.",
+                ],
+                'sub_points': {}
+            }
+        ],
+        key_judgements=[
+            "Shaheen Abdulla v. UoI (2022): Directed police to take suo motu action against hate speech.",
+            "Tehseen S. Poonawalla v. UoI (2018): Issued guidelines to curb mob lynching.",
+            "Shreya Singhal v. UoI (2015): Struck down Sec 66A, IT Act as vague; upheld Art. 19(1)(a).",
+            "Pravasi Bhalai Sangathan v. UoI (2014): Urged Law Commission to define hate speech.",
+        ],
+        challenges=[
+            "Legal Challenge: No standalone hate crime law; vague definitions under BNS 2023.",
+            "Proving intent: Conviction requires proof of malicious intent — major evidentiary hurdle.",
+            "Enforcement Gap: Weak suo motu action; low conviction rates due to political pressure.",
+            "Digital Dilemma: Algorithmic amplification; anonymity via VPNs; transnational content.",
+            "Societal: Fear-mongering used for political mobilisation; deep-rooted caste prejudices.",
+            "Statistical blind spot: NCRB lacks specific data on lynchings/religious killings.",
+        ],
+        suggestions=[
+            "Codify definition: Enact standalone law defining Hate Speech/Crime.",
+            "Constitutional tort liability: Treat hate speech by public officials as civil wrong.",
+            "Service rule enforcement: Classify failure to prevent hate speech as major misconduct.",
+            "Suo motu FIR mandate: Strictly enforce SC (2022) directive; treat delay as contempt.",
+            "24-hour digital takedown: Priority channel under IT Rules 2026 for DNOs.",
+            "Fast-track 'Hate Courts': Complete trials within 6 months.",
+            "Media literacy: Integrate critical thinking in NCERT curriculum.",
+        ],
+        key_facts_box=[
+            "267th Law Commission Report (2017) — first formal attempt to define hate speech.",
+            "SC/ST Atrocities Act 1989 & BNS 2023 — primary legal shields currently.",
+            "NCRB lacks hate-crime specific data — policy gap.",
+        ],
+        important_terms={
+            "Hate Speech":        "Expression that incites hatred/discrimination against a group (267th LCR 2017).",
+            "Hate Crime":         "Bias-motivated criminal act targeting a protected characteristic.",
+            "Suo Motu":           "Action taken by a court/authority on its own initiative without a petition.",
+            "Art. 19(1)(a)":     "Fundamental Right to Freedom of Speech and Expression.",
+            "Art. 19(2)":        "Permits 'reasonable restrictions' on free speech for public order, etc.",
+            "Algorithmic Amplification": "Social media algorithms prioritising sensationalist/hateful content.",
+        },
+        practice_questions=[
+            "Discuss the constitutional framework for regulating hate speech in India. (150 words)",
+            "Consider the following: 1) India has a standalone Hate Crime law  2) SC has directed suo motu FIRs for hate speech. Which is/are correct? (a)1 only (b)2 only (c)Both (d)Neither",
+            "What are the challenges in curbing hate speech in the digital age? Suggest a framework.",
+        ],
+        upsc_tags="GS2 | Polity & Governance | Prelims + Mains",
+    )
 
-    args = parser.parse_args()
+    test_note = StudyNote(
+        title="Daily Current Affairs",
+        date="February 20, 2026",
+        topics=[test_topic],
+    )
 
-    if args.test:
-        print("\n=== Running Current Affairs Academy PDF Generator Test ===\n")
-
-        from .content_extractor import KeyPoint, UPSCRelevance, SubjectCategory, ExamRelevance
-
-        test_topic = TopicNote(
-            title="India Launches New Space Mission to Study Sun",
-            summary="ISRO successfully launched Aditya-L1, India's first solar observation mission. The spacecraft will study the Sun's corona and solar winds from the L1 Lagrange point, positioned 1.5 million km from Earth.",
-            detailed_analysis="The Aditya-L1 mission represents a major milestone for India's space program. The spacecraft carries seven scientific payloads designed to observe the solar atmosphere, understand space weather events, and study the dynamics of the solar corona. This mission places India among the select group of nations with dedicated solar observation capabilities.",
-            background_context="India's interest in solar science dates back decades. The mission was conceived by scientists at the Indian Institute of Astrophysics and developed jointly with multiple ISRO centers. The L1 Lagrange point was chosen because it allows uninterrupted observation of the Sun without eclipses or occultation.",
-            implications="This mission will enhance India's capability to predict space weather events that can impact satellite communications, power grids, and GPS systems on Earth. The data from Aditya-L1 will contribute to global solar research and strengthen India's position in international space cooperation.",
-            key_points=[
-                KeyPoint(
-                    text="Aditya-L1 is India's first dedicated solar observation mission",
-                    importance=5,
-                    dates=["September 2, 2023"],
-                    figures=["1.5 million km from Earth", "7 scientific payloads"]
-                ),
-                KeyPoint(
-                    text="Spacecraft placed at L1 Lagrange point for continuous Sun observation",
-                    importance=4,
-                    related_facts=["L1 is gravitationally stable", "No eclipse or occultation at L1"]
-                )
-            ],
-            upsc_relevance=UPSCRelevance(
-                subject=SubjectCategory.SCIENCE_TECH,
-                exam_relevance=ExamRelevance.BOTH,
-                syllabus_topic="Space Technology",
-                mains_paper="GS3",
-                important_for=["UPSC CSE", "ISRO"]
-            ),
-            important_terms={
-                "L1 Lagrange Point": "A gravitationally stable point between Earth and Sun, 1.5 million km from Earth",
-                "Solar Corona": "The outermost layer of the Sun's atmosphere extending millions of km into space",
-                "Solar Wind": "Continuous stream of charged particles (plasma) emanating from the Sun",
-                "Space Weather": "Variations in the space environment between the Sun and Earth"
-            },
-            practice_questions=[
-                "What is the primary scientific objective of the Aditya-L1 mission?",
-                "Explain the significance of Lagrange points in space missions with examples.",
-                "How does space weather affect modern technological systems? Discuss."
-            ],
-            related_topics=["ISRO Missions", "Chandrayaan-3", "Space Technology Policy", "Solar Physics"],
-            timestamp="5:30"
-        )
-
-        test_note = StudyNote(
-            title="Daily Current Affairs",
-            date="September 2, 2023",
-            topics=[test_topic],
-            video_duration=1500.0
-        )
-
-        try:
-            generator = PDFNotesGenerator()
-            pdf_path = generator.generate_notes(test_note)
-            print(f"\nSuccess! PDF generated: {pdf_path}")
-        except Exception as e:
-            print(f"Error: {e}")
-            import traceback
-            traceback.print_exc()
+    gen = PDFNotesGenerator(output_dir="output/notes")
+    path = gen.generate_notes(test_note)
+    print(f"PDF generated: {path}")

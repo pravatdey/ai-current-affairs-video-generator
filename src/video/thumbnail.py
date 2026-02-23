@@ -1,381 +1,607 @@
 """
-Thumbnail Generator - Creates YouTube thumbnails for videos
+Thumbnail Generator - Creates UPSC-style YouTube thumbnails for videos.
+
+Produces thumbnails matching the "Current Affairs UPSC" channel aesthetic:
+- Dark navy blue background with subtle tech-grid overlay
+- Bold yellow/orange headline text with glow outline
+- Category badge (e.g. "DAILY DOSE", "MCQ CHALLENGE", "WEEKLY ROUNDUP")
+- Decorative accent bar and bottom branding strip
+- Optional clock/newspaper icon element
 """
 
 from pathlib import Path
 from typing import Tuple, Optional, List
 from dataclasses import dataclass
 import textwrap
+import math
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+import numpy as np
 
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Colour palette (matches screenshot style)
+# ---------------------------------------------------------------------------
+NAVY_DARK   = (10,  18,  40)   # deepest background
+NAVY_MID    = (15,  30,  70)   # mid background
+NAVY_LIGHT  = (20,  45, 100)   # lighter layer / grid lines
+GOLD        = (255, 200,  30)   # primary accent – yellow/gold
+ORANGE      = (255, 140,  20)   # secondary accent – orange
+CYAN        = ( 30, 220, 255)   # highlight / glow
+WHITE       = (255, 255, 255)
+RED_BADGE   = (200,  30,  50)   # badge background
+DARK_BADGE  = ( 20,  20,  50)   # dark badge variant
+
+
 @dataclass
 class ThumbnailResult:
-    """Result of thumbnail generation"""
+    """Result of thumbnail generation."""
     success: bool
     thumbnail_path: str
     resolution: Tuple[int, int]
     error: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# Helper: font loader
+# ---------------------------------------------------------------------------
+_FONT_FALLBACKS_BOLD = [
+    "arialbd.ttf", "Arial Bold", "Arial-Bold",
+    "DejaVuSans-Bold.ttf", "DejaVuSans-Bold",
+    "FreeSansBold.ttf", "FreeSansBold",
+]
+_FONT_FALLBACKS_REG = [
+    "arial.ttf", "Arial", "DejaVuSans.ttf", "DejaVuSans", "FreeSans.ttf",
+]
+
+def _load_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
+    fallbacks = _FONT_FALLBACKS_BOLD if bold else _FONT_FALLBACKS_REG
+    for name in fallbacks:
+        try:
+            return ImageFont.truetype(name, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+# ---------------------------------------------------------------------------
+# Drawing helpers
+# ---------------------------------------------------------------------------
+def _draw_text_outlined(
+    draw: ImageDraw.ImageDraw,
+    pos: Tuple[int, int],
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    fill: Tuple,
+    outline: Tuple = (0, 0, 0),
+    outline_width: int = 4,
+):
+    """Draw text with a solid outline for legibility."""
+    x, y = pos
+    for dx in range(-outline_width, outline_width + 1):
+        for dy in range(-outline_width, outline_width + 1):
+            if dx != 0 or dy != 0:
+                draw.text((x + dx, y + dy), text, font=font, fill=outline)
+    draw.text((x, y), text, font=font, fill=fill)
+
+
+def _text_size(draw: ImageDraw.ImageDraw, text: str, font) -> Tuple[int, int]:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def _centered_x(draw, text, font, canvas_width):
+    w, _ = _text_size(draw, text, font)
+    return (canvas_width - w) // 2
+
+
+# ---------------------------------------------------------------------------
+# Background creators
+# ---------------------------------------------------------------------------
+def _make_navy_gradient(size: Tuple[int, int]) -> Image.Image:
+    """Create dark navy gradient background."""
+    w, h = size
+    arr = np.zeros((h, w, 3), dtype=np.uint8)
+    for y in range(h):
+        t = y / h
+        r = int(NAVY_DARK[0] + (NAVY_MID[0] - NAVY_DARK[0]) * t)
+        g = int(NAVY_DARK[1] + (NAVY_MID[1] - NAVY_DARK[1]) * t)
+        b = int(NAVY_DARK[2] + (NAVY_MID[2] - NAVY_DARK[2]) * t)
+        arr[y, :] = [r, g, b]
+    return Image.fromarray(arr, "RGB")
+
+
+def _add_tech_grid(img: Image.Image, alpha: int = 25) -> Image.Image:
+    """Overlay a subtle circuit/grid pattern (like the MCQ Challenge panel)."""
+    w, h = img.size
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
+
+    grid_color = (*NAVY_LIGHT, alpha)
+    step = 60
+    for x in range(0, w, step):
+        d.line([(x, 0), (x, h)], fill=grid_color, width=1)
+    for y in range(0, h, step):
+        d.line([(0, y), (w, y)], fill=grid_color, width=1)
+
+    # Dot nodes at intersections
+    node_color = (*CYAN, alpha)
+    for x in range(0, w, step):
+        for y in range(0, h, step):
+            d.ellipse([x-2, y-2, x+2, y+2], fill=node_color)
+
+    base = img.convert("RGBA")
+    result = Image.alpha_composite(base, overlay)
+    return result.convert("RGB")
+
+
+def _add_radial_glow(img: Image.Image, center_x_frac: float = 0.5, color: Tuple = CYAN) -> Image.Image:
+    """Add a subtle radial glow at a given horizontal position."""
+    w, h = img.size
+    glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(glow)
+    cx = int(w * center_x_frac)
+    cy = h // 2
+    for radius in range(300, 0, -20):
+        a = max(0, int(18 * (1 - radius / 300)))
+        d.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
+                  fill=(*color, a))
+    base = img.convert("RGBA")
+    result = Image.alpha_composite(base, glow)
+    return result.convert("RGB")
+
+
+# ---------------------------------------------------------------------------
+# Decorative elements
+# ---------------------------------------------------------------------------
+def _draw_gold_border(draw: ImageDraw.ImageDraw, size: Tuple[int, int], width: int = 8):
+    """Draw a gold/orange rectangular border (like the screenshot frame)."""
+    w, h = size
+    for i in range(width):
+        draw.rectangle([i, i, w - 1 - i, h - 1 - i], outline=GOLD)
+
+
+def _draw_accent_bar(draw: ImageDraw.ImageDraw, y: int, width: int, color: Tuple, height: int = 5):
+    """Horizontal coloured accent line."""
+    draw.rectangle([0, y, width, y + height], fill=color)
+
+
+def _draw_badge(
+    draw: ImageDraw.ImageDraw,
+    x: int, y: int,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    bg: Tuple = RED_BADGE,
+    fg: Tuple = WHITE,
+    padding_x: int = 18,
+    padding_y: int = 10,
+    radius: int = 8,
+) -> Tuple[int, int]:
+    """Draw a rounded-rectangle badge and return its (width, height)."""
+    tw, th = _text_size(draw, text, font)
+    bw = tw + padding_x * 2
+    bh = th + padding_y * 2
+
+    # Rounded rect via successive rectangles
+    draw.rectangle([x + radius, y, x + bw - radius, y + bh], fill=bg)
+    draw.rectangle([x, y + radius, x + bw, y + bh - radius], fill=bg)
+    draw.ellipse([x, y, x + radius * 2, y + radius * 2], fill=bg)
+    draw.ellipse([x + bw - radius * 2, y, x + bw, y + radius * 2], fill=bg)
+    draw.ellipse([x, y + bh - radius * 2, x + radius * 2, y + bh], fill=bg)
+    draw.ellipse([x + bw - radius * 2, y + bh - radius * 2, x + bw, y + bh], fill=bg)
+
+    draw.text((x + padding_x, y + padding_y), text, font=font, fill=fg)
+    return bw, bh
+
+
+def _draw_clock_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, radius: int = 55):
+    """Draw a simple analog clock (as in the 'Daily Dose 12 AM' panel)."""
+    # Outer ring
+    draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
+                 outline=CYAN, width=4)
+    draw.ellipse([cx - radius + 6, cy - radius + 6,
+                  cx + radius - 6, cy + radius - 6],
+                 outline=(*CYAN, 80), width=2)
+    # Hour hand (pointing up – 12 o'clock)
+    draw.line([cx, cy, cx, cy - int(radius * 0.6)], fill=WHITE, width=4)
+    # Minute hand (pointing right)
+    draw.line([cx, cy, cx + int(radius * 0.75), cy], fill=GOLD, width=3)
+    # Center dot
+    draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=WHITE)
+
+
+def _draw_newspaper_stack(draw: ImageDraw.ImageDraw, x: int, y: int, w: int = 140, h: int = 100):
+    """Draw a simplified stacked-newspaper graphic."""
+    for i in range(3, -1, -1):
+        ox, oy = i * 5, i * (-4)
+        draw.rectangle([x + ox, y + oy, x + ox + w, y + oy + h],
+                        fill=(30 + i * 10, 35 + i * 10, 55 + i * 10),
+                        outline=(80, 90, 120), width=1)
+        # Simulated text lines
+        for row in range(3):
+            lw = w - 20 - row * 10
+            ly = y + oy + 15 + row * 18
+            draw.rectangle([x + ox + 10, ly, x + ox + 10 + lw, ly + 5],
+                            fill=(120, 130, 160))
+
+
+def _draw_bottom_branding(draw: ImageDraw.ImageDraw, size: Tuple[int, int], channel_name: str = "CURRENT AFFAIRS UPSC"):
+    """Draw the bottom branding bar (matches screenshot bottom strip)."""
+    w, h = size
+    bar_h = 52
+    bar_y = h - bar_h
+    # Dark background
+    draw.rectangle([0, bar_y, w, h], fill=(8, 14, 35))
+    # Gold top edge line
+    draw.rectangle([0, bar_y, w, bar_y + 3], fill=GOLD)
+
+    font = _load_font(26, bold=True)
+    text_w, text_h = _text_size(draw, channel_name, font)
+    tx = (w - text_w) // 2
+    ty = bar_y + (bar_h - text_h) // 2 - 2
+    draw.text((tx, ty), channel_name, font=font, fill=GOLD)
+
+
+# ---------------------------------------------------------------------------
+# Style presets
+# ---------------------------------------------------------------------------
+STYLE_PRESETS = {
+    "daily_dose": {
+        "badge_text": "UPSC CURRENT AFFAIRS",
+        "badge_bg": (200, 30, 50),
+        "subtitle": "DAILY DOSE!",
+        "subtitle_color": CYAN,
+        "icon": "clock",
+        "glow_x": 0.25,
+    },
+    "mcq_challenge": {
+        "badge_text": "MCQ CHALLENGE",
+        "badge_bg": (30, 100, 200),
+        "subtitle": "UPSC READY!",
+        "subtitle_color": GOLD,
+        "icon": "grid",
+        "glow_x": 0.5,
+    },
+    "weekly_roundup": {
+        "badge_text": "WEEKLY ROUNDUP",
+        "badge_bg": (160, 100, 10),
+        "subtitle": "CRACK UPSC 2025",
+        "subtitle_color": WHITE,
+        "icon": "newspaper",
+        "glow_x": 0.75,
+    },
+    "budget_economy": {
+        "badge_text": "EXPERT ANALYSIS",
+        "badge_bg": (20, 130, 80),
+        "subtitle": "BUDGET & ECONOMY",
+        "subtitle_color": GOLD,
+        "icon": "grid",
+        "glow_x": 0.6,
+    },
+    "upsc_strategy": {
+        "badge_text": "UPSC STRATEGY",
+        "badge_bg": (80, 20, 150),
+        "subtitle": "MASTER PLAN",
+        "subtitle_color": CYAN,
+        "icon": "grid",
+        "glow_x": 0.4,
+    },
+    "default": {
+        "badge_text": "CURRENT AFFAIRS",
+        "badge_bg": RED_BADGE,
+        "subtitle": "UPSC FOCUS",
+        "subtitle_color": GOLD,
+        "icon": "newspaper",
+        "glow_x": 0.5,
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
 class ThumbnailGenerator:
     """
-    Generates attractive YouTube thumbnails for current affairs videos.
-
-    Features:
-    - Text overlay with wrapping
-    - Gradient backgrounds
-    - Frame extraction from video
-    - Custom styling
+    Generates UPSC-style YouTube thumbnails matching the 'Current Affairs UPSC'
+    channel look:
+      - Dark navy background + tech grid
+      - Gold border frame
+      - Bold yellow/orange headline
+      - Category badge and subtitle
+      - Decorative icon (clock or newspaper)
+      - Bottom branding bar
     """
 
-    # YouTube recommended thumbnail size
     DEFAULT_SIZE = (1280, 720)
-
-    # Default fonts (fallback chain)
-    FONT_FALLBACKS = [
-        "Arial-Bold",
-        "Arial",
-        "DejaVuSans-Bold",
-        "DejaVuSans",
-        "FreeSansBold",
-        "FreeSans"
-    ]
 
     def __init__(
         self,
         size: Tuple[int, int] = None,
-        font_path: str = None
+        channel_name: str = "CURRENT AFFAIRS UPSC",
     ):
-        """
-        Initialize thumbnail generator.
-
-        Args:
-            size: Thumbnail size (width, height)
-            font_path: Path to custom font file
-        """
         self.size = size or self.DEFAULT_SIZE
-        self.font_path = font_path
-        self.font = self._load_font()
-
+        self.channel_name = channel_name
         logger.info(f"ThumbnailGenerator initialized: {self.size[0]}x{self.size[1]}")
 
-    def _load_font(self, size: int = 72) -> ImageFont.FreeTypeFont:
-        """Load font with fallback"""
-        # Try custom font path
-        if self.font_path:
-            try:
-                return ImageFont.truetype(self.font_path, size)
-            except Exception:
-                pass
-
-        # Try system fonts
-        for font_name in self.FONT_FALLBACKS:
-            try:
-                return ImageFont.truetype(font_name, size)
-            except Exception:
-                continue
-
-        # Fallback to default
-        return ImageFont.load_default()
-
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
     def generate(
         self,
         output_path: str,
         title: str,
         date: str = None,
+        style: str = "default",
         background_image: str = None,
         video_path: str = None,
-        style: str = "gradient"
     ) -> ThumbnailResult:
         """
-        Generate thumbnail.
+        Generate a UPSC-style thumbnail.
 
         Args:
-            output_path: Path to save thumbnail
-            title: Main title text
-            date: Date text (optional)
-            background_image: Path to background image
-            video_path: Path to video (for frame extraction)
-            style: Style preset ("gradient", "image", "video_frame")
+            output_path:      Where to save the PNG.
+            title:            Main headline text.
+            date:             Optional date string shown below headline.
+            style:            One of the STYLE_PRESETS keys.
+            background_image: Optional custom BG image path (overrides generated BG).
+            video_path:       Optional video for frame extraction (fallback BG).
 
         Returns:
-            ThumbnailResult object
+            ThumbnailResult
         """
         try:
-            width, height = self.size
-
-            # Create base image
-            if style == "video_frame" and video_path:
-                img = self._extract_video_frame(video_path)
-            elif background_image and Path(background_image).exists():
-                img = Image.open(background_image).resize(self.size)
-            else:
-                img = self._create_gradient_background()
-
-            # Apply overlay effects
-            img = self._apply_overlay(img)
-
-            # Add text
-            img = self._add_text(img, title, date)
-
-            # Add branding elements
-            img = self._add_branding(img)
-
-            # Save
-            output_file = Path(output_path)
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-
-            img.save(str(output_path), "PNG", quality=95)
-
-            logger.info(f"Thumbnail generated: {output_path}")
-
-            return ThumbnailResult(
-                success=True,
-                thumbnail_path=str(output_path),
-                resolution=self.size
-            )
-
+            preset = STYLE_PRESETS.get(style, STYLE_PRESETS["default"])
+            img = self._build_background(background_image, video_path)
+            img = self._composite_content(img, title, date, preset)
+            self._save(img, output_path)
+            logger.info(f"Thumbnail saved: {output_path}")
+            return ThumbnailResult(True, str(output_path), self.size)
         except Exception as e:
             logger.error(f"Thumbnail generation failed: {e}")
-            return ThumbnailResult(
-                success=False,
-                thumbnail_path="",
-                resolution=self.size,
-                error=str(e)
-            )
-
-    def _create_gradient_background(self) -> Image.Image:
-        """Create a gradient background"""
-        width, height = self.size
-
-        # Create base image
-        img = Image.new('RGB', self.size)
-        draw = ImageDraw.Draw(img)
-
-        # Gradient colors (dark blue to purple)
-        color1 = (26, 26, 46)    # #1a1a2e
-        color2 = (79, 37, 102)   # #4f2566
-
-        # Draw gradient
-        for y in range(height):
-            r = int(color1[0] + (color2[0] - color1[0]) * y / height)
-            g = int(color1[1] + (color2[1] - color1[1]) * y / height)
-            b = int(color1[2] + (color2[2] - color1[2]) * y / height)
-            draw.line([(0, y), (width, y)], fill=(r, g, b))
-
-        return img
-
-    def _extract_video_frame(self, video_path: str) -> Image.Image:
-        """Extract a frame from video"""
-        try:
-            from moviepy.editor import VideoFileClip
-
-            clip = VideoFileClip(video_path)
-            # Get frame at 30% of video duration
-            frame_time = clip.duration * 0.3
-            frame = clip.get_frame(frame_time)
-            clip.close()
-
-            img = Image.fromarray(frame)
-            return img.resize(self.size)
-
-        except Exception as e:
-            logger.warning(f"Failed to extract video frame: {e}")
-            return self._create_gradient_background()
-
-    def _apply_overlay(self, img: Image.Image) -> Image.Image:
-        """Apply darkening overlay for better text visibility"""
-        # Create dark overlay
-        overlay = Image.new('RGBA', self.size, (0, 0, 0, 128))
-
-        # Convert to RGBA if needed
-        if img.mode != 'RGBA':
-            img = img.convert('RGBA')
-
-        # Composite
-        img = Image.alpha_composite(img, overlay)
-
-        # Convert back to RGB
-        return img.convert('RGB')
-
-    def _add_text(
-        self,
-        img: Image.Image,
-        title: str,
-        date: str = None
-    ) -> Image.Image:
-        """Add title and date text to thumbnail"""
-        draw = ImageDraw.Draw(img)
-        width, height = self.size
-
-        # Title font
-        title_font_size = 72
-        title_font = self._load_font(title_font_size)
-
-        # Wrap title text
-        max_chars = 25  # Characters per line
-        wrapped_title = textwrap.fill(title, width=max_chars)
-        lines = wrapped_title.split('\n')
-
-        # Calculate text position
-        total_text_height = len(lines) * (title_font_size + 10)
-        y_start = (height - total_text_height) // 2 - 30
-
-        # Draw title with outline
-        for i, line in enumerate(lines):
-            # Get text bounding box
-            bbox = draw.textbbox((0, 0), line, font=title_font)
-            text_width = bbox[2] - bbox[0]
-            x = (width - text_width) // 2
-            y = y_start + i * (title_font_size + 10)
-
-            # Draw outline
-            outline_color = (0, 0, 0)
-            for ox, oy in [(-3, -3), (-3, 3), (3, -3), (3, 3), (-3, 0), (3, 0), (0, -3), (0, 3)]:
-                draw.text((x + ox, y + oy), line, font=title_font, fill=outline_color)
-
-            # Draw text
-            draw.text((x, y), line, font=title_font, fill=(255, 255, 255))
-
-        # Draw date if provided
-        if date:
-            date_font = self._load_font(36)
-            bbox = draw.textbbox((0, 0), date, font=date_font)
-            date_width = bbox[2] - bbox[0]
-            date_x = (width - date_width) // 2
-            date_y = y_start + total_text_height + 30
-
-            # Draw with outline
-            for ox, oy in [(-2, -2), (-2, 2), (2, -2), (2, 2)]:
-                draw.text((date_x + ox, date_y + oy), date, font=date_font, fill=(0, 0, 0))
-            draw.text((date_x, date_y), date, font=date_font, fill=(255, 200, 100))
-
-        return img
-
-    def _add_branding(self, img: Image.Image) -> Image.Image:
-        """Add branding elements"""
-        draw = ImageDraw.Draw(img)
-        width, height = self.size
-
-        # Add "CURRENT AFFAIRS" badge
-        badge_font = self._load_font(28)
-        badge_text = "CURRENT AFFAIRS"
-
-        # Badge background
-        badge_padding = 15
-        bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
-        badge_width = bbox[2] - bbox[0] + badge_padding * 2
-        badge_height = bbox[3] - bbox[1] + badge_padding * 2
-
-        badge_x = 30
-        badge_y = 30
-
-        # Draw badge background
-        draw.rectangle(
-            [badge_x, badge_y, badge_x + badge_width, badge_y + badge_height],
-            fill=(200, 30, 58)  # Red color
-        )
-
-        # Draw badge text
-        draw.text(
-            (badge_x + badge_padding, badge_y + badge_padding - 5),
-            badge_text,
-            font=badge_font,
-            fill=(255, 255, 255)
-        )
-
-        # Add "LIVE" indicator (optional visual element)
-        live_x = width - 100
-        live_y = 30
-
-        # Draw circle
-        draw.ellipse(
-            [live_x, live_y + 5, live_x + 15, live_y + 20],
-            fill=(255, 0, 0)
-        )
-
-        # Draw "LIVE" text
-        live_font = self._load_font(24)
-        draw.text(
-            (live_x + 22, live_y),
-            "DAILY",
-            font=live_font,
-            fill=(255, 255, 255)
-        )
-
-        return img
+            return ThumbnailResult(False, "", self.size, str(e))
 
     def generate_from_headlines(
         self,
         output_path: str,
         headlines: List[str],
-        date: str = None
+        date: str = None,
+        style: str = None,
     ) -> ThumbnailResult:
         """
-        Generate thumbnail from list of headlines.
-        Uses the first headline as the main title.
+        Auto-select style from headlines and generate thumbnail.
 
         Args:
-            output_path: Path to save thumbnail
-            headlines: List of headlines
-            date: Date text
+            output_path: Save path.
+            headlines:   List of article headlines (first is used as title).
+            date:        Date string.
+            style:       Force a specific preset; auto-detected if None.
 
         Returns:
-            ThumbnailResult object
+            ThumbnailResult
         """
-        if not headlines:
-            title = "Today's Top News"
-        else:
-            # Use first headline, truncate if too long
-            title = headlines[0]
-            if len(title) > 60:
-                title = title[:57] + "..."
+        title = headlines[0] if headlines else "Today's Top UPSC Current Affairs"
+        if len(title) > 55:
+            title = title[:52] + "…"
 
-        return self.generate(
-            output_path=output_path,
-            title=title,
-            date=date
+        if style is None:
+            style = self._detect_style(title)
+
+        return self.generate(output_path=output_path, title=title, date=date, style=style)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _detect_style(self, title: str) -> str:
+        """Pick a preset based on keywords in the title."""
+        t = title.lower()
+        if any(k in t for k in ("budget", "economy", "gdp", "fiscal", "inflation")):
+            return "budget_economy"
+        if any(k in t for k in ("mcq", "quiz", "question", "test", "mock")):
+            return "mcq_challenge"
+        if any(k in t for k in ("weekly", "roundup", "week")):
+            return "weekly_roundup"
+        if any(k in t for k in ("strategy", "plan", "preparation", "tips")):
+            return "upsc_strategy"
+        return "daily_dose"
+
+    def _build_background(self, bg_image_path: str = None, video_path: str = None) -> Image.Image:
+        """Build the base background image."""
+        w, h = self.size
+
+        if bg_image_path and Path(bg_image_path).exists():
+            img = Image.open(bg_image_path).resize(self.size)
+            # Darken to match navy feel
+            img = ImageEnhance.Brightness(img).enhance(0.35)
+        elif video_path:
+            img = self._extract_video_frame(video_path)
+            img = ImageEnhance.Brightness(img).enhance(0.35)
+        else:
+            img = _make_navy_gradient(self.size)
+
+        img = _add_tech_grid(img, alpha=30)
+        img = _add_radial_glow(img, center_x_frac=0.5, color=CYAN)
+        return img
+
+    def _composite_content(
+        self,
+        img: Image.Image,
+        title: str,
+        date: str,
+        preset: dict,
+    ) -> Image.Image:
+        """Composite all text/graphic elements onto the background."""
+        w, h = self.size
+        draw = ImageDraw.Draw(img)
+
+        # 1. Gold border
+        _draw_gold_border(draw, self.size, width=10)
+
+        # 2. Top accent bar (under border)
+        _draw_accent_bar(draw, y=10, width=w, color=ORANGE, height=4)
+
+        # 3. Decorative icon (left side)
+        icon_type = preset.get("icon", "newspaper")
+        if icon_type == "clock":
+            _draw_clock_icon(draw, cx=130, cy=h // 2 - 20, radius=65)
+        elif icon_type == "newspaper":
+            _draw_newspaper_stack(draw, x=40, y=h // 2 - 80, w=130, h=110)
+        # "grid" icon = rely on tech grid background
+
+        # 4. Badge (top-left area, right of icon)
+        badge_font = _load_font(28, bold=True)
+        badge_x = 240 if icon_type != "grid" else 40
+        badge_y = 35
+        bw, bh = _draw_badge(
+            draw, badge_x, badge_y,
+            preset["badge_text"], badge_font,
+            bg=preset["badge_bg"], fg=WHITE,
         )
 
+        # 5. Subtitle (below badge, same x)
+        sub_font = _load_font(38, bold=True)
+        sub_text = preset["subtitle"]
+        sub_x = badge_x
+        sub_y = badge_y + bh + 12
+        _draw_text_outlined(
+            draw, (sub_x, sub_y), sub_text, sub_font,
+            fill=preset["subtitle_color"], outline=(0, 0, 20), outline_width=3,
+        )
 
-# CLI interface for testing
+        # 6. Horizontal divider below subtitle
+        div_y = sub_y + 55
+        draw.rectangle([badge_x, div_y, w - 50, div_y + 3], fill=GOLD)
+
+        # 7. Main headline (centred, large, bold yellow)
+        self._draw_headline(draw, title, top_y=div_y + 18)
+
+        # 8. Date (bottom-right, small)
+        if date:
+            date_font = _load_font(30, bold=False)
+            _draw_text_outlined(
+                draw,
+                (w - 320, h - 90),
+                date, date_font,
+                fill=GOLD, outline=(0, 0, 0), outline_width=2,
+            )
+
+        # 9. Bottom branding bar
+        _draw_bottom_branding(draw, self.size, self.channel_name)
+
+        return img
+
+    def _draw_headline(self, draw: ImageDraw.ImageDraw, title: str, top_y: int):
+        """Draw the main headline with large bold yellow text, centered."""
+        w, h = self.size
+        branding_h = 52
+        available_h = h - branding_h - top_y - 20
+
+        # Determine font size and wrapping
+        for font_size in (72, 62, 54, 46, 40):
+            font = _load_font(font_size, bold=True)
+            # Wrap to fit width (account for left icon area)
+            max_line_w = w - 260  # leave margin for icon + border
+            words = title.split()
+            lines = []
+            current = ""
+            for word in words:
+                test = (current + " " + word).strip()
+                tw, _ = _text_size(draw, test, font)
+                if tw <= max_line_w:
+                    current = test
+                else:
+                    if current:
+                        lines.append(current)
+                    current = word
+            if current:
+                lines.append(current)
+
+            line_h = font_size + 10
+            total_h = len(lines) * line_h
+            if total_h <= available_h or font_size == 40:
+                break
+
+        # Vertical centering within available space
+        text_start_y = top_y + (available_h - total_h) // 2
+
+        for i, line in enumerate(lines):
+            tw, _ = _text_size(draw, line, font)
+            # Centre among the right portion of canvas
+            right_area_x = 220
+            tx = right_area_x + (w - right_area_x - 40 - tw) // 2
+            ty = text_start_y + i * line_h
+
+            # Soft glow behind text
+            glow_img = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            glow_draw = ImageDraw.Draw(glow_img)
+            for blur_offset in range(8, 0, -2):
+                glow_draw.text(
+                    (tx, ty), line, font=font,
+                    fill=(*GOLD, 40)
+                )
+            glow_img = glow_img.filter(ImageFilter.GaussianBlur(radius=6))
+            base = draw._image.convert("RGBA")
+            composite = Image.alpha_composite(base, glow_img)
+            draw._image.paste(composite.convert("RGB"))
+            draw = ImageDraw.Draw(draw._image)
+
+            # Actual text with outline
+            _draw_text_outlined(
+                draw, (tx, ty), line, font,
+                fill=GOLD, outline=(0, 0, 0), outline_width=4,
+            )
+
+        return draw
+
+    def _extract_video_frame(self, video_path: str) -> Image.Image:
+        """Extract a frame from video as fallback background."""
+        try:
+            from moviepy.editor import VideoFileClip
+            clip = VideoFileClip(video_path)
+            frame = clip.get_frame(clip.duration * 0.3)
+            clip.close()
+            return Image.fromarray(frame).resize(self.size)
+        except Exception as e:
+            logger.warning(f"Frame extraction failed: {e}")
+            return _make_navy_gradient(self.size)
+
+    def _save(self, img: Image.Image, output_path: str):
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        img.convert("RGB").save(str(out), "PNG", optimize=True)
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Thumbnail Generator CLI")
-    parser.add_argument("--title", type=str, default="Breaking News Today", help="Thumbnail title")
-    parser.add_argument("--date", type=str, help="Date text")
-    parser.add_argument("--output", type=str, default="output/thumbnail.png", help="Output path")
-    parser.add_argument("--background", type=str, help="Background image path")
-    parser.add_argument("--video", type=str, help="Video path for frame extraction")
-
+    parser = argparse.ArgumentParser(description="UPSC Thumbnail Generator CLI")
+    parser.add_argument("--title", default="India Signs Historic Trade Deal with EU", help="Headline text")
+    parser.add_argument("--date", default=None, help="Date text")
+    parser.add_argument("--style", default="daily_dose",
+                        choices=list(STYLE_PRESETS.keys()), help="Thumbnail style preset")
+    parser.add_argument("--output", default="output/thumbnails/test_thumbnail.png")
+    parser.add_argument("--background", default=None, help="Custom background image")
+    parser.add_argument("--video", default=None, help="Video for frame extraction")
     args = parser.parse_args()
 
-    generator = ThumbnailGenerator()
-
-    style = "gradient"
-    if args.video:
-        style = "video_frame"
-    elif args.background:
-        style = "image"
-
-    result = generator.generate(
+    gen = ThumbnailGenerator()
+    result = gen.generate(
         output_path=args.output,
         title=args.title,
         date=args.date,
+        style=args.style,
         background_image=args.background,
         video_path=args.video,
-        style=style
     )
 
     if result.success:
-        print(f"\nSuccess! Thumbnail saved to: {result.thumbnail_path}")
+        print(f"\nSuccess! Thumbnail saved: {result.thumbnail_path}")
         print(f"Resolution: {result.resolution[0]}x{result.resolution[1]}")
     else:
         print(f"\nError: {result.error}")
