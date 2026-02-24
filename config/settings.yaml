@@ -109,16 +109,22 @@ composition:
   # Background
   background:
     type: "solid"          # Options: "solid", "image", "video"
-    color: "#1a1a2e"       # For solid background
+    color: "#0e1220"       # Dark navy for slide background contrast
     image: ""              # Path to background image
     video: ""              # Path to background video
 
-  # Avatar position
+  # Presentation slides background (shows content behind avatar)
+  presentation_slides:
+    enabled: true
+    content_start_x_pct: 0.33   # Content starts at 33% from left (avatar area)
+    transition_duration: 0.5     # Fade duration between slides
+
+  # Avatar position (left side, smaller to show slides)
   avatar:
-    position: "center"     # Options: "left", "center", "right"
-    scale: 0.8             # Scale factor for avatar
-    x_offset: 0
-    y_offset: 50
+    position: "left"       # Options: "left", "center", "right"
+    scale: 0.55            # Smaller to not block presentation slides
+    x_offset: -50          # Push toward left edge
+    y_offset: 80           # Push down slightly
 
   # Text overlays
   text:

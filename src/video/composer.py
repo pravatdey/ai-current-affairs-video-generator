@@ -31,6 +31,7 @@ from .educational_effects import (
     EducationalEffects, KeyPointDisplay, FactCard,
     TopicHeader, ImageOverlay
 )
+from .presentation_slides import PresentationSlideGenerator
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -92,6 +93,11 @@ class VideoComposer:
         # Initialize effects modules
         self.effects = VideoEffects()
         self.edu_effects = EducationalEffects()
+        self.slide_generator = PresentationSlideGenerator(
+            content_start_x_pct=self.composition_config
+                .get("presentation_slides", {})
+                .get("content_start_x_pct", 0.33)
+        )
 
         # UPSC mode settings
         self.upsc_mode = self.config.get("upsc_mode", True)
@@ -434,7 +440,7 @@ class VideoComposer:
         educational_content: EducationalContent = None,
         script_data: Dict[str, Any] = None
     ) -> VideoClip:
-        """Create main video composition with avatar and educational overlays"""
+        """Create main video composition with avatar and presentation slides background"""
         width, height = self.resolution
         duration = avatar_clip.duration
 
@@ -445,37 +451,40 @@ class VideoComposer:
         if educational_content is None:
             educational_content = EducationalContent()
 
-        # Create background - darker for educational content readability
+        # ── Base background (always present, visible during gaps) ────────
         bg_config = self.composition_config.get("background", {})
-        bg_type = bg_config.get("type", "solid")
+        bg_color = bg_config.get("color", "#0f1419")
+        base_background = ColorClip(
+            size=self.resolution,
+            color=self._hex_to_rgb(bg_color)
+        ).set_duration(duration)
 
-        if bg_type == "solid":
-            bg_color = bg_config.get("color", "#0f1419")  # Darker for UPSC content
-            background = ColorClip(
-                size=self.resolution,
-                color=self._hex_to_rgb(bg_color)
-            ).set_duration(duration)
-        elif bg_type == "image" and bg_config.get("image"):
-            background = ImageClip(bg_config["image"]).set_duration(duration)
-            background = background.resize(self.resolution)
-        else:
-            background = ColorClip(
-                size=self.resolution,
-                color=(15, 20, 25)  # Very dark for educational contrast
-            ).set_duration(duration)
+        # ── Presentation slides as background ────────────────────────────
+        slides_config = self.composition_config.get("presentation_slides", {})
+        use_slides = slides_config.get("enabled", True) and script_data
 
-        # Resize and position avatar - shifted left for educational overlays on right
+        slide_clips = []
+        if use_slides:
+            try:
+                slide_clips = self.slide_generator.generate_slides(
+                    script_data=script_data,
+                    video_size=self.resolution,
+                    total_duration=duration
+                )
+                logger.info(f"Generated {len(slide_clips)} presentation slides for background")
+            except Exception as e:
+                logger.warning(f"Failed to generate presentation slides: {e}")
+
+        # ── Resize and position avatar ───────────────────────────────────
         avatar_config = self.composition_config.get("avatar", {})
-        avatar_scale = avatar_config.get("scale", 0.7)  # Slightly smaller for UPSC
+        avatar_scale = avatar_config.get("scale", 0.55)
 
-        # Resize avatar to fit
         avatar_height = int(height * avatar_scale)
         avatar_clip = avatar_clip.resize(height=avatar_height)
 
-        # Position avatar on left side to make room for educational overlays
-        position = avatar_config.get("position", "left")  # Default to left for UPSC
-        x_offset = avatar_config.get("x_offset", 0)
-        y_offset = avatar_config.get("y_offset", 30)
+        position = avatar_config.get("position", "left")
+        x_offset = avatar_config.get("x_offset", -50)
+        y_offset = avatar_config.get("y_offset", 80)
 
         if position == "left":
             x_pos = width // 5 - avatar_clip.w // 2 + x_offset
@@ -488,24 +497,26 @@ class VideoComposer:
 
         avatar_clip = avatar_clip.set_position((x_pos, y_pos))
 
-        # Layer clips
-        layers = [background, avatar_clip]
+        # ── Layer clips: base_bg -> slides -> avatar -> overlays ─────────
+        layers = [base_background] + slide_clips + [avatar_clip]
 
-        # Add topic headers/transitions from script data
+        # Add topic header transitions (shorter when slides are active)
         if script_data:
-            layers.extend(self._create_topic_transitions(script_data, duration))
+            topic_duration = 2.0 if slide_clips else 4.0
+            layers.extend(self._create_topic_transitions(
+                script_data, duration, topic_duration=topic_duration))
 
-        # Add key points overlays from educational content
-        if educational_content.key_points:
-            layers.extend(self._create_key_point_overlays(educational_content.key_points))
+        # Only add key point / image / stats overlays if slides are NOT active
+        # (slides already show the key points and terms)
+        if not slide_clips:
+            if educational_content.key_points:
+                layers.extend(self._create_key_point_overlays(educational_content.key_points))
 
-        # Add image overlays (maps, diagrams, etc.)
-        if educational_content.images:
-            layers.extend(self._create_image_overlays(educational_content.images))
+            if educational_content.images:
+                layers.extend(self._create_image_overlays(educational_content.images))
 
-        # Add statistics cards
-        if educational_content.statistics:
-            layers.extend(self._create_stats_overlays(educational_content.statistics))
+            if educational_content.statistics:
+                layers.extend(self._create_stats_overlays(educational_content.statistics))
 
         # Add headline overlay at bottom
         text_config = self.composition_config.get("text", {}).get("headline", {})
@@ -521,11 +532,10 @@ class VideoComposer:
         # Add UPSC ticker with exam relevance
         ticker_config = self.composition_config.get("text", {}).get("ticker", {})
         if add_ticker and ticker_config.get("enabled", True):
-            # Create UPSC-styled ticker
             subjects = script_data.get('subjects_covered', []) if script_data else []
-            ticker_text = f"UPSC Current Affairs | Topics: {' • '.join(subjects[:4])}" if subjects else ""
+            ticker_text = f"UPSC Current Affairs | Topics: {' \u2022 '.join(subjects[:4])}" if subjects else ""
             if not ticker_text and headlines:
-                ticker_text = "UPSC CURRENT AFFAIRS: " + " • ".join(headlines[:3])
+                ticker_text = "UPSC CURRENT AFFAIRS: " + " \u2022 ".join(headlines[:3])
 
             if ticker_text:
                 ticker = self.effects.create_news_ticker(
@@ -535,7 +545,7 @@ class VideoComposer:
                     speed=ticker_config.get("speed", 80),
                     fontsize=ticker_config.get("size", 28),
                     color=ticker_config.get("color", "white"),
-                    bg_color=ticker_config.get("background", "#1a365d")  # Dark blue for UPSC
+                    bg_color=ticker_config.get("background", "#1a365d")
                 )
                 layers.append(ticker)
 
@@ -554,7 +564,8 @@ class VideoComposer:
     def _create_topic_transitions(
         self,
         script_data: Dict[str, Any],
-        total_duration: float
+        total_duration: float,
+        topic_duration: float = 4.0
     ) -> List[VideoClip]:
         """Create topic transition overlays from script data."""
         clips = []
@@ -572,7 +583,7 @@ class VideoComposer:
                     title=segment.get('article_title', '')[:50],
                     subtitle=segment.get('subject_category', ''),
                     start_time=start_time,
-                    duration=4.0,  # 4 seconds for topic header
+                    duration=topic_duration,
                     topic_number=segments.index(segment),
                     exam_tag=segment.get('exam_relevance', ''),
                     subject=segment.get('subject_category', '')

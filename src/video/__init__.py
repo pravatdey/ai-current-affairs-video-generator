@@ -10,6 +10,7 @@ from .educational_effects import (
     TopicHeader,
     ImageOverlay
 )
+from .presentation_slides import PresentationSlideGenerator
 
 __all__ = [
     "VideoComposer",
@@ -21,5 +22,6 @@ __all__ = [
     "KeyPointDisplay",
     "FactCard",
     "TopicHeader",
-    "ImageOverlay"
+    "ImageOverlay",
+    "PresentationSlideGenerator",
 ]

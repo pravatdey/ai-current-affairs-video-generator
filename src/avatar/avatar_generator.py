@@ -527,14 +527,14 @@ class AvatarGenerator:
             pass
 
         # ── 3. Default avatar known proportions ───────────────────────────────
-        # Our generated avatar (512 × 640) has mouth centre at (256, 275).
-        # Proportionally: cx = 50 %, cy = 43 % of height.
+        # Our generated avatar (512 x 640) has mouth centre at (256, 265).
+        # Proportionally: cx = 50 %, cy = 41.4 % of height.
         if avatar_image_path and Path(avatar_image_path).name == 'news_anchor.png':
             return {
                 'cx': img_w // 2,
-                'cy': int(img_h * 0.43),
-                'w': int(img_w * 0.175),
-                'h': int(img_h * 0.070),
+                'cy': int(img_h * 0.414),
+                'w': int(img_w * 0.156),
+                'h': int(img_h * 0.066),
                 'method': 'default_avatar_known',
             }
 
@@ -727,240 +727,397 @@ class AvatarGenerator:
             )
 
     def _create_default_avatar(self) -> Optional[str]:
-        """Create a cartoon-style AI avatar image"""
+        """Create a professional, human-like AI avatar image with gradient shading."""
         try:
-            from PIL import Image, ImageDraw, ImageFont
+            from PIL import Image, ImageDraw, ImageFont, ImageFilter
+            import numpy as np
             import math
 
-            # Create a cartoon-style news anchor avatar
             avatar_path = Path("assets/avatars/news_anchor.png")
             avatar_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Create image with gradient-like background
-            width, height = 512, 640
-            img = Image.new('RGB', (width, height), color='#1a1a2e')
-            draw = ImageDraw.Draw(img)
-
-            # Background gradient effect (darker at edges)
-            for i in range(height):
-                gradient_color = int(26 + (i / height) * 15)
-                draw.line([(0, i), (width, i)], fill=(gradient_color, gradient_color, 46 + int(i/height * 20)))
-
+            # Draw at 2x resolution for anti-aliasing, downscale at the end
+            S = 2  # supersampling factor
+            width, height = 512 * S, 640 * S
             center_x = width // 2
 
-            # === BODY / SUIT ===
-            # Suit jacket (professional blue)
-            suit_color = '#2563eb'  # Nice blue suit
-            suit_top = 380
-            # Draw shoulders and torso
-            draw.polygon([
-                (center_x - 150, suit_top),  # Left shoulder
-                (center_x - 180, height),     # Left bottom
-                (center_x + 180, height),     # Right bottom
-                (center_x + 150, suit_top),   # Right shoulder
-            ], fill=suit_color)
+            img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
 
-            # Suit lapels (darker)
-            lapel_color = '#1d4ed8'
-            # Left lapel
-            draw.polygon([
-                (center_x - 40, suit_top + 20),
-                (center_x - 80, height),
-                (center_x - 20, height),
-                (center_x, suit_top + 80),
-            ], fill=lapel_color)
+            # ── Background gradient (dark navy, subtle radial glow) ──────
+            bg_arr = np.zeros((height, width, 4), dtype=np.uint8)
+            Y, X = np.ogrid[:height, :width]
+            dist = np.sqrt(((X - center_x) / (width * 0.6)) ** 2 + ((Y - height * 0.35) / (height * 0.7)) ** 2)
+            dist = np.clip(dist, 0, 1)
+            # Core color: (18, 22, 40) -> edge: (10, 12, 24)
+            for c, (c0, c1) in enumerate([(18, 10), (22, 12), (40, 24)]):
+                bg_arr[:, :, c] = (c0 * (1 - dist) + c1 * dist).astype(np.uint8)
+            bg_arr[:, :, 3] = 255
+            img = Image.fromarray(bg_arr, 'RGBA')
+            draw = ImageDraw.Draw(img)
+
+            # ── Helper: radial gradient ellipse ──────────────────────────
+            def draw_gradient_ellipse(base_img, bbox, color_center, color_edge, alpha=255):
+                """Draw an ellipse filled with radial gradient."""
+                x1, y1, x2, y2 = bbox
+                ew, eh = x2 - x1, y2 - y1
+                cx_e, cy_e = ew // 2, eh // 2
+                layer = np.zeros((eh, ew, 4), dtype=np.uint8)
+                Ye, Xe = np.ogrid[:eh, :ew]
+                d = np.sqrt(((Xe - cx_e) / max(cx_e, 1)) ** 2 + ((Ye - cy_e) / max(cy_e, 1)) ** 2)
+                d = np.clip(d, 0, 1)
+                mask = d <= 1.0
+                for c in range(3):
+                    layer[:, :, c] = (color_center[c] * (1 - d) + color_edge[c] * d).astype(np.uint8)
+                layer[:, :, 3] = np.where(mask, alpha, 0).astype(np.uint8)
+                ellipse_img = Image.fromarray(layer, 'RGBA')
+                base_img.paste(ellipse_img, (x1, y1), ellipse_img)
+
+            # ── Helper: linear gradient rectangle ────────────────────────
+            def draw_gradient_rect(base_img, bbox, color_top, color_bottom, alpha=255):
+                x1, y1, x2, y2 = bbox
+                rw, rh = x2 - x1, y2 - y1
+                layer = np.zeros((rh, rw, 4), dtype=np.uint8)
+                t = np.linspace(0, 1, rh).reshape(-1, 1)
+                for c in range(3):
+                    layer[:, :, c] = (color_top[c] * (1 - t) + color_bottom[c] * t).astype(np.uint8)
+                layer[:, :, 3] = alpha
+                rect_img = Image.fromarray(layer, 'RGBA')
+                base_img.paste(rect_img, (x1, y1), rect_img)
+
+            # ── Color palette ────────────────────────────────────────────
+            skin_light = (245, 218, 190)
+            skin_mid = (228, 190, 155)
+            skin_shadow = (200, 160, 125)
+            hair_dark = (25, 28, 35)
+            hair_mid = (40, 44, 55)
+            suit_main = (30, 75, 180)
+            suit_light = (50, 100, 210)
+            suit_dark = (20, 55, 140)
+            lapel_dark = (22, 60, 155)
+            shirt_white = (240, 242, 248)
+            tie_red = (185, 35, 40)
+            tie_dark = (145, 25, 30)
+
+            # ── BODY / SUIT ──────────────────────────────────────────────
+            suit_top = 760
+
+            # Shoulders (curved) - using polygon with many points for smoothness
+            shoulder_pts = []
+            for angle in range(0, 181, 3):
+                rad = math.radians(angle)
+                sx = center_x + int(310 * math.cos(rad))
+                sy = suit_top - int(50 * math.sin(rad))
+                shoulder_pts.append((sx, sy))
+            shoulder_pts.extend([
+                (center_x + 360, height),
+                (center_x - 360, height),
+            ])
+            draw.polygon(shoulder_pts, fill=suit_main)
+
+            # Suit gradient overlay (lighter at top, darker at bottom)
+            draw_gradient_rect(img, (center_x - 310, suit_top, center_x + 310, height),
+                               suit_light, suit_dark, alpha=120)
+
+            # Left lapel with gradient
+            lapel_pts_l = [
+                (center_x - 60, suit_top + 30),
+                (center_x - 120, height),
+                (center_x - 30, height),
+                (center_x - 5, suit_top + 140),
+            ]
+            draw.polygon(lapel_pts_l, fill=lapel_dark)
+
             # Right lapel
-            draw.polygon([
-                (center_x + 40, suit_top + 20),
-                (center_x + 80, height),
-                (center_x + 20, height),
-                (center_x, suit_top + 80),
-            ], fill=lapel_color)
+            lapel_pts_r = [
+                (center_x + 60, suit_top + 30),
+                (center_x + 120, height),
+                (center_x + 30, height),
+                (center_x + 5, suit_top + 140),
+            ]
+            draw.polygon(lapel_pts_r, fill=lapel_dark)
 
-            # White shirt / collar
-            shirt_color = '#f8fafc'
-            draw.polygon([
-                (center_x - 35, suit_top + 10),
-                (center_x, suit_top + 100),
-                (center_x + 35, suit_top + 10),
-            ], fill=shirt_color)
+            # White shirt / collar V-neck
+            collar_pts = [
+                (center_x - 55, suit_top + 15),
+                (center_x, suit_top + 170),
+                (center_x + 55, suit_top + 15),
+            ]
+            draw.polygon(collar_pts, fill=shirt_white)
 
-            # Tie
-            tie_color = '#dc2626'  # Red tie
+            # Collar shadow
             draw.polygon([
-                (center_x - 12, suit_top + 30),
-                (center_x + 12, suit_top + 30),
-                (center_x + 8, height - 100),
-                (center_x - 8, height - 100),
-            ], fill=tie_color)
+                (center_x - 50, suit_top + 20),
+                (center_x - 10, suit_top + 60),
+                (center_x, suit_top + 50),
+            ], fill=(220, 222, 230))
+            draw.polygon([
+                (center_x + 50, suit_top + 20),
+                (center_x + 10, suit_top + 60),
+                (center_x, suit_top + 50),
+            ], fill=(220, 222, 230))
+
+            # Tie with gradient shading
+            tie_w = 22
+            draw.polygon([
+                (center_x - tie_w, suit_top + 55),
+                (center_x + tie_w, suit_top + 55),
+                (center_x + int(tie_w * 0.7), height - 180),
+                (center_x - int(tie_w * 0.7), height - 180),
+            ], fill=tie_red)
+            # Tie center highlight
+            draw.polygon([
+                (center_x - 4, suit_top + 70),
+                (center_x + 4, suit_top + 70),
+                (center_x + 3, height - 200),
+                (center_x - 3, height - 200),
+            ], fill=(210, 55, 60))
             # Tie knot
-            draw.ellipse([center_x - 15, suit_top + 20, center_x + 15, suit_top + 50], fill=tie_color)
+            draw_gradient_ellipse(img, (center_x - 28, suit_top + 35, center_x + 28, suit_top + 80),
+                                  (200, 45, 50), tie_dark, alpha=255)
 
-            # === NECK ===
-            neck_color = '#fcd9b6'  # Skin tone
-            neck_width = 50
-            neck_top = 340
-            draw.rectangle([
-                center_x - neck_width // 2, neck_top,
-                center_x + neck_width // 2, suit_top + 30
-            ], fill=neck_color)
+            # ── NECK ─────────────────────────────────────────────────────
+            neck_top = 680
+            neck_w = 70
+            draw_gradient_rect(img, (center_x - neck_w, neck_top, center_x + neck_w, suit_top + 50),
+                               skin_light, skin_mid, alpha=255)
+            # Neck shadow under chin
+            draw_gradient_ellipse(img, (center_x - neck_w + 10, neck_top - 10,
+                                        center_x + neck_w - 10, neck_top + 40),
+                                  skin_shadow, skin_mid, alpha=140)
 
-            # === HEAD ===
-            head_center_y = 220
-            head_radius_x = 90
-            head_radius_y = 110
+            # ── HEAD ─────────────────────────────────────────────────────
+            head_cy = 430
+            head_rx = 160
+            head_ry = 195
 
-            # Main face (oval)
-            draw.ellipse([
-                center_x - head_radius_x, head_center_y - head_radius_y,
-                center_x + head_radius_x, head_center_y + head_radius_y
-            ], fill=neck_color)
+            # Ears (behind head)
+            ear_y = head_cy - 15
+            # Left ear
+            draw_gradient_ellipse(img, (center_x - head_rx - 10, ear_y - 35,
+                                        center_x - head_rx + 35, ear_y + 50),
+                                  skin_light, skin_shadow, alpha=255)
+            # Inner ear shadow
+            draw_gradient_ellipse(img, (center_x - head_rx + 2, ear_y - 15,
+                                        center_x - head_rx + 25, ear_y + 30),
+                                  skin_shadow, skin_mid, alpha=180)
+            # Right ear
+            draw_gradient_ellipse(img, (center_x + head_rx - 35, ear_y - 35,
+                                        center_x + head_rx + 10, ear_y + 50),
+                                  skin_light, skin_shadow, alpha=255)
+            draw_gradient_ellipse(img, (center_x + head_rx - 25, ear_y - 15,
+                                        center_x + head_rx - 2, ear_y + 30),
+                                  skin_shadow, skin_mid, alpha=180)
 
-            # === HAIR ===
-            hair_color = '#1f2937'  # Dark hair
-            # Top hair
-            draw.ellipse([
-                center_x - head_radius_x - 5, head_center_y - head_radius_y - 20,
-                center_x + head_radius_x + 5, head_center_y - 30
-            ], fill=hair_color)
+            # Main face with gradient (lighter center, shadow at edges)
+            draw_gradient_ellipse(img, (center_x - head_rx, head_cy - head_ry,
+                                        center_x + head_rx, head_cy + head_ry),
+                                  skin_light, skin_mid, alpha=255)
 
-            # Side hair (left)
-            draw.ellipse([
-                center_x - head_radius_x - 10, head_center_y - head_radius_y + 20,
-                center_x - head_radius_x + 40, head_center_y + 20
-            ], fill=hair_color)
+            # Jawline shadow (bottom of face)
+            draw_gradient_ellipse(img, (center_x - head_rx + 20, head_cy + head_ry - 80,
+                                        center_x + head_rx - 20, head_cy + head_ry + 5),
+                                  skin_shadow, skin_mid, alpha=100)
 
+            # Cheek blush (subtle pink)
+            draw_gradient_ellipse(img, (center_x - 110, head_cy + 20,
+                                        center_x - 40, head_cy + 70),
+                                  (235, 180, 170), skin_light, alpha=60)
+            draw_gradient_ellipse(img, (center_x + 40, head_cy + 20,
+                                        center_x + 110, head_cy + 70),
+                                  (235, 180, 170), skin_light, alpha=60)
+
+            # ── HAIR ─────────────────────────────────────────────────────
+            # Main hair (top of head) - layered for volume
+            draw_gradient_ellipse(img, (center_x - head_rx - 12, head_cy - head_ry - 35,
+                                        center_x + head_rx + 12, head_cy - 45),
+                                  hair_mid, hair_dark, alpha=255)
+            # Hair volume top layer
+            draw_gradient_ellipse(img, (center_x - head_rx + 5, head_cy - head_ry - 25,
+                                        center_x + head_rx - 5, head_cy - 60),
+                                  (50, 55, 68), hair_dark, alpha=200)
+            # Hair highlight (sheen)
+            draw_gradient_ellipse(img, (center_x - 50, head_cy - head_ry - 15,
+                                        center_x + 30, head_cy - head_ry + 35),
+                                  (70, 75, 90), hair_dark, alpha=100)
+
+            # Side hair (left) - slightly covering ear
+            draw_gradient_ellipse(img, (center_x - head_rx - 15, head_cy - head_ry + 30,
+                                        center_x - head_rx + 50, head_cy + 30),
+                                  hair_mid, hair_dark, alpha=255)
             # Side hair (right)
-            draw.ellipse([
-                center_x + head_radius_x - 40, head_center_y - head_radius_y + 20,
-                center_x + head_radius_x + 10, head_center_y + 20
-            ], fill=hair_color)
+            draw_gradient_ellipse(img, (center_x + head_rx - 50, head_cy - head_ry + 30,
+                                        center_x + head_rx + 15, head_cy + 30),
+                                  hair_mid, hair_dark, alpha=255)
 
-            # === FACIAL FEATURES ===
-            # Eyebrows
-            eyebrow_color = '#374151'
-            eyebrow_y = head_center_y - 40
+            # Hairline blend into forehead
+            draw_gradient_ellipse(img, (center_x - head_rx + 20, head_cy - head_ry + 5,
+                                        center_x + head_rx - 20, head_cy - head_ry + 70),
+                                  hair_dark, skin_light, alpha=80)
+
+            # ── EYEBROWS (thicker, natural arcs) ────────────────────────
+            draw = ImageDraw.Draw(img)
+            eb_y = head_cy - 75
             # Left eyebrow
-            draw.arc([center_x - 55, eyebrow_y - 10, center_x - 15, eyebrow_y + 10],
-                     start=200, end=340, fill=eyebrow_color, width=4)
+            for offset in range(-3, 4):
+                draw.arc([center_x - 105, eb_y - 18 + offset, center_x - 25, eb_y + 18 + offset],
+                         start=200, end=340, fill=(35, 38, 48, 220), width=3)
             # Right eyebrow
-            draw.arc([center_x + 15, eyebrow_y - 10, center_x + 55, eyebrow_y + 10],
-                     start=200, end=340, fill=eyebrow_color, width=4)
+            for offset in range(-3, 4):
+                draw.arc([center_x + 25, eb_y - 18 + offset, center_x + 105, eb_y + 18 + offset],
+                         start=200, end=340, fill=(35, 38, 48, 220), width=3)
 
-            # Eyes
-            eye_y = head_center_y - 15
-            eye_spacing = 35
+            # ── EYES (almond-shaped, layered) ────────────────────────────
+            eye_y = head_cy - 28
+            eye_spacing = 65
 
-            # Eye whites
-            eye_white = '#ffffff'
-            eye_width = 28
-            eye_height = 20
-            # Left eye
-            draw.ellipse([
-                center_x - eye_spacing - eye_width, eye_y - eye_height,
-                center_x - eye_spacing + eye_width, eye_y + eye_height
-            ], fill=eye_white)
-            # Right eye
-            draw.ellipse([
-                center_x + eye_spacing - eye_width, eye_y - eye_height,
-                center_x + eye_spacing + eye_width, eye_y + eye_height
-            ], fill=eye_white)
+            for side in [-1, 1]:
+                ex = center_x + side * eye_spacing
 
-            # Pupils (looking slightly to the side - more engaging)
-            pupil_color = '#1f2937'
-            pupil_radius = 10
-            pupil_offset = 3  # Slight offset for natural look
-            # Left pupil
-            draw.ellipse([
-                center_x - eye_spacing + pupil_offset - pupil_radius,
-                eye_y - pupil_radius,
-                center_x - eye_spacing + pupil_offset + pupil_radius,
-                eye_y + pupil_radius
-            ], fill=pupil_color)
-            # Right pupil
-            draw.ellipse([
-                center_x + eye_spacing + pupil_offset - pupil_radius,
-                eye_y - pupil_radius,
-                center_x + eye_spacing + pupil_offset + pupil_radius,
-                eye_y + pupil_radius
-            ], fill=pupil_color)
+                # Eye socket shadow
+                draw_gradient_ellipse(img, (ex - 48, eye_y - 32, ex + 48, eye_y + 32),
+                                      skin_shadow, skin_light, alpha=50)
 
-            # Eye shine (makes it look alive)
-            shine_color = '#ffffff'
-            shine_radius = 4
-            draw.ellipse([
-                center_x - eye_spacing + pupil_offset - shine_radius + 5,
-                eye_y - shine_radius - 3,
-                center_x - eye_spacing + pupil_offset + shine_radius + 5,
-                eye_y + shine_radius - 3
-            ], fill=shine_color)
-            draw.ellipse([
-                center_x + eye_spacing + pupil_offset - shine_radius + 5,
-                eye_y - shine_radius - 3,
-                center_x + eye_spacing + pupil_offset + shine_radius + 5,
-                eye_y + shine_radius - 3
-            ], fill=shine_color)
+                # Eye white (sclera) - almond shape using ellipse
+                draw_gradient_ellipse(img, (ex - 42, eye_y - 22, ex + 42, eye_y + 22),
+                                      (255, 255, 255), (235, 235, 240), alpha=255)
 
-            # Nose (simple)
-            nose_color = '#e5c9a8'
-            nose_y = head_center_y + 20
-            draw.polygon([
-                (center_x, nose_y - 25),
-                (center_x - 12, nose_y + 10),
-                (center_x + 12, nose_y + 10),
-            ], fill=nose_color)
+                # Iris (colored ring)
+                iris_x = ex + side * 5  # slight look direction
+                iris_r = 18
+                draw_gradient_ellipse(img, (iris_x - iris_r, eye_y - iris_r,
+                                            iris_x + iris_r, eye_y + iris_r),
+                                      (70, 50, 30), (45, 30, 18), alpha=255)
 
-            # Mouth position stored for lip-sync animation (not drawn statically)
-            smile_y = head_center_y + 55
+                # Pupil (black center)
+                pupil_r = 10
+                draw.ellipse([iris_x - pupil_r, eye_y - pupil_r,
+                              iris_x + pupil_r, eye_y + pupil_r],
+                             fill=(10, 10, 12, 255))
+
+                # Eye shine (catchlight) - two spots
+                shine_r = 6
+                draw.ellipse([iris_x - shine_r + 8, eye_y - shine_r - 5,
+                              iris_x + shine_r + 8, eye_y + shine_r - 5],
+                             fill=(255, 255, 255, 240))
+                draw.ellipse([iris_x - 3, eye_y + 3, iris_x + 3, eye_y + 9],
+                             fill=(255, 255, 255, 140))
+
+                # Upper eyelid line (defines almond shape)
+                draw.arc([ex - 44, eye_y - 26, ex + 44, eye_y + 18],
+                         start=190, end=350, fill=(50, 40, 35, 200), width=4)
+                # Lower eyelid (subtle)
+                draw.arc([ex - 38, eye_y - 10, ex + 38, eye_y + 26],
+                         start=10, end=170, fill=(180, 155, 130, 100), width=2)
+
+                # Eyelashes (subtle upper)
+                for lash_angle in range(200, 345, 20):
+                    rad = math.radians(lash_angle)
+                    lx1 = ex + int(44 * math.cos(rad))
+                    ly1 = eye_y - 4 + int(22 * math.sin(rad))
+                    lx2 = ex + int(50 * math.cos(rad))
+                    ly2 = eye_y - 6 + int(28 * math.sin(rad))
+                    draw.line([(lx1, ly1), (lx2, ly2)], fill=(40, 35, 30, 160), width=2)
+
+            # ── NOSE (soft, shaded) ──────────────────────────────────────
+            nose_y = head_cy + 40
+
+            # Nose bridge shadow (subtle vertical line)
+            draw_gradient_rect(img, (center_x - 6, head_cy - 10, center_x + 6, nose_y),
+                               skin_mid, skin_shadow, alpha=40)
+
+            # Nose tip - soft ellipse
+            draw_gradient_ellipse(img, (center_x - 20, nose_y - 10,
+                                        center_x + 20, nose_y + 18),
+                                  skin_mid, skin_shadow, alpha=80)
+
+            # Nostrils (small dark ellipses)
+            draw.ellipse([center_x - 16, nose_y + 2, center_x - 6, nose_y + 12],
+                         fill=(180, 140, 110, 150))
+            draw.ellipse([center_x + 6, nose_y + 2, center_x + 16, nose_y + 12],
+                         fill=(180, 140, 110, 150))
+
+            # Nose highlight
+            draw_gradient_ellipse(img, (center_x - 8, nose_y - 25, center_x + 8, nose_y - 5),
+                                  (255, 235, 215), skin_light, alpha=60)
+
+            # ── MOUTH REGION (stored for lip-sync, not drawn) ────────────
+            mouth_cy = head_cy + 100
             self._default_mouth_region = {
-                'cx': center_x, 'cy': smile_y,
-                'w': 90, 'h': 48,   # pixel coords in 512×640 image space
+                'cx': center_x // S, 'cy': mouth_cy // S,
+                'w': 160 // S, 'h': 85 // S,
                 'method': 'default_avatar_known'
             }
 
-            # Ears
-            ear_color = '#fcd9b6'
-            ear_y = head_center_y - 10
-            # Left ear
-            draw.ellipse([
-                center_x - head_radius_x - 5, ear_y - 20,
-                center_x - head_radius_x + 20, ear_y + 30
-            ], fill=ear_color)
-            # Right ear
-            draw.ellipse([
-                center_x + head_radius_x - 20, ear_y - 20,
-                center_x + head_radius_x + 5, ear_y + 30
-            ], fill=ear_color)
+            # Subtle closed lips hint (neutral expression)
+            draw.arc([center_x - 45, mouth_cy - 8, center_x + 45, mouth_cy + 16],
+                     start=10, end=170, fill=(195, 120, 110, 180), width=3)
+            draw.arc([center_x - 40, mouth_cy - 12, center_x + 40, mouth_cy + 8],
+                     start=195, end=345, fill=(195, 120, 110, 160), width=3)
 
-            # === MICROPHONE (news anchor detail) ===
-            mic_color = '#374151'
-            mic_x = center_x - 100
-            mic_y = suit_top + 60
-            # Microphone body
-            draw.ellipse([mic_x - 8, mic_y - 15, mic_x + 8, mic_y + 15], fill=mic_color)
-            # Microphone wire hint
-            draw.line([(mic_x, mic_y + 15), (mic_x - 20, suit_top + 120)], fill=mic_color, width=2)
+            # ── MICROPHONE ───────────────────────────────────────────────
+            mic_x = center_x - 190
+            mic_y = suit_top + 100
 
-            # === NEWS BADGE ===
-            badge_color = '#fbbf24'  # Gold badge
-            badge_x = center_x + 80
-            badge_y = suit_top + 50
-            draw.ellipse([badge_x - 15, badge_y - 15, badge_x + 15, badge_y + 15], fill=badge_color)
-            # "AI" text on badge
+            # Mic arm
+            draw.line([(mic_x + 15, mic_y + 25), (mic_x - 20, suit_top + 200)],
+                      fill=(55, 60, 70, 200), width=4)
+            # Mic body (rounded rect)
+            draw.rounded_rectangle([mic_x - 12, mic_y - 20, mic_x + 12, mic_y + 20],
+                                   radius=8, fill=(60, 65, 75, 230))
+            # Mic grill lines
+            for gy in range(mic_y - 14, mic_y + 14, 5):
+                draw.line([(mic_x - 8, gy), (mic_x + 8, gy)],
+                          fill=(80, 85, 95, 180), width=1)
+            # Mic highlight
+            draw.line([(mic_x - 10, mic_y - 18), (mic_x - 10, mic_y + 18)],
+                      fill=(100, 105, 120, 120), width=2)
+
+            # ── AI BADGE ─────────────────────────────────────────────────
+            badge_x = center_x + 155
+            badge_y = suit_top + 85
+            badge_r = 24
+
+            # Badge glow
+            draw_gradient_ellipse(img, (badge_x - badge_r - 6, badge_y - badge_r - 6,
+                                        badge_x + badge_r + 6, badge_y + badge_r + 6),
+                                  (255, 200, 50), (200, 150, 30), alpha=60)
+            # Badge circle
+            draw_gradient_ellipse(img, (badge_x - badge_r, badge_y - badge_r,
+                                        badge_x + badge_r, badge_y + badge_r),
+                                  (255, 200, 60), (210, 160, 30), alpha=255)
+
+            draw = ImageDraw.Draw(img)
             try:
-                badge_font = ImageFont.truetype("arial.ttf", 14)
-            except:
+                badge_font = ImageFont.truetype("arial.ttf", 22)
+            except Exception:
                 badge_font = ImageFont.load_default()
-            draw.text((badge_x - 8, badge_y - 8), "AI", fill='#1f2937', font=badge_font)
+            # Center "AI" text on badge
+            bbox = draw.textbbox((0, 0), "AI", font=badge_font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text((badge_x - tw // 2, badge_y - th // 2 - 2), "AI",
+                      fill=(30, 25, 20, 255), font=badge_font)
 
-            # Save the cartoon avatar
-            img.save(str(avatar_path), quality=95)
-            logger.info(f"Created cartoon-style avatar: {avatar_path}")
+            # ── Subtle shoulder highlight ────────────────────────────────
+            draw_gradient_ellipse(img, (center_x - 200, suit_top - 30,
+                                        center_x + 200, suit_top + 40),
+                                  suit_light, suit_main, alpha=50)
+
+            # ── Downscale 2x → 1x with LANCZOS anti-aliasing ────────────
+            final_w, final_h = 512, 640
+            img = img.resize((final_w, final_h), Image.LANCZOS)
+
+            # Convert to RGB for saving
+            bg_rgb = Image.new('RGB', (final_w, final_h), (14, 16, 30))
+            bg_rgb.paste(img, (0, 0), img)
+
+            bg_rgb.save(str(avatar_path), quality=95)
+            logger.info(f"Created professional avatar: {avatar_path}")
 
             return str(avatar_path)
 
         except Exception as e:
-            logger.error(f"Failed to create cartoon avatar: {e}")
+            logger.error(f"Failed to create professional avatar: {e}")
             return None
 
     def _create_static_video(
