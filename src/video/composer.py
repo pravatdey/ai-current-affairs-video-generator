@@ -533,7 +533,8 @@ class VideoComposer:
         ticker_config = self.composition_config.get("text", {}).get("ticker", {})
         if add_ticker and ticker_config.get("enabled", True):
             subjects = script_data.get('subjects_covered', []) if script_data else []
-            ticker_text = f"UPSC Current Affairs | Topics: {' \u2022 '.join(subjects[:4])}" if subjects else ""
+            sep = ' \u2022 '
+            ticker_text = f"UPSC Current Affairs | Topics: {sep.join(subjects[:4])}" if subjects else ""
             if not ticker_text and headlines:
                 ticker_text = "UPSC CURRENT AFFAIRS: " + " \u2022 ".join(headlines[:3])
 
