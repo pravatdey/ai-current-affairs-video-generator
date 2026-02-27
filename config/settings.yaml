@@ -118,6 +118,10 @@ composition:
     enabled: true
     content_start_x_pct: 0.33   # Content starts at 33% from left (avatar area)
     transition_duration: 0.5     # Fade duration between slides
+    max_key_points: 4            # Max bullet points (4 fits best with larger fonts)
+    show_subject_badge: true     # Prominent colored subject badge bar
+    show_terms_as_badges: true   # Pill badges instead of table for terms
+    bullet_style: "numbered"     # "numbered" (circled 1,2,3) or "dots"
 
   # Avatar position (left side, smaller to show slides)
   avatar:

@@ -46,18 +46,58 @@ class PresentationSlideGenerator:
     while key content remains readable on the right.
     """
 
-    # Color themes matching educational_effects.py
+    # Color themes – each subject has a unique, vivid palette for instant recognition
     THEMES = {
-        'Polity': {'primary': (26, 54, 93), 'accent': (66, 153, 225), 'header': (20, 45, 80)},
-        'Economy': {'primary': (34, 84, 61), 'accent': (104, 211, 145), 'header': (28, 70, 50)},
-        'International Relations': {'primary': (68, 51, 122), 'accent': (183, 148, 244), 'header': (55, 40, 100)},
-        'Environment': {'primary': (34, 84, 61), 'accent': (104, 211, 145), 'header': (28, 70, 50)},
-        'Science & Technology': {'primary': (26, 54, 93), 'accent': (66, 153, 225), 'header': (20, 45, 80)},
-        'Social Issues': {'primary': (124, 45, 18), 'accent': (251, 211, 141), 'header': (100, 35, 14)},
-        'Security': {'primary': (120, 30, 30), 'accent': (230, 120, 120), 'header': (95, 22, 22)},
-        'Geography': {'primary': (34, 84, 61), 'accent': (104, 211, 145), 'header': (28, 70, 50)},
-        'History': {'primary': (124, 45, 18), 'accent': (251, 211, 141), 'header': (100, 35, 14)},
-        'Current Affairs': {'primary': (26, 54, 93), 'accent': (66, 153, 225), 'header': (20, 45, 80)},
+        'Polity': {
+            'primary': (26, 54, 93), 'accent': (66, 153, 225), 'header': (20, 45, 80),
+            'badge_bg': (37, 99, 186), 'bullet_highlight': (100, 180, 255),
+            'card_bg': (22, 38, 62), 'gradient_start': (15, 35, 70), 'gradient_end': (26, 54, 93),
+        },
+        'Economy': {
+            'primary': (20, 70, 45), 'accent': (46, 204, 113), 'header': (15, 55, 35),
+            'badge_bg': (34, 139, 84), 'bullet_highlight': (80, 220, 140),
+            'card_bg': (18, 42, 32), 'gradient_start': (12, 35, 25), 'gradient_end': (20, 70, 45),
+        },
+        'International Relations': {
+            'primary': (68, 51, 122), 'accent': (155, 89, 255), 'header': (55, 40, 100),
+            'badge_bg': (98, 71, 170), 'bullet_highlight': (190, 150, 255),
+            'card_bg': (40, 32, 68), 'gradient_start': (30, 24, 55), 'gradient_end': (68, 51, 122),
+        },
+        'Environment': {
+            'primary': (15, 80, 70), 'accent': (0, 206, 180), 'header': (10, 65, 55),
+            'badge_bg': (20, 130, 110), 'bullet_highlight': (60, 230, 200),
+            'card_bg': (12, 45, 40), 'gradient_start': (8, 38, 32), 'gradient_end': (15, 80, 70),
+        },
+        'Science & Technology': {
+            'primary': (20, 50, 80), 'accent': (0, 180, 255), 'header': (15, 40, 65),
+            'badge_bg': (30, 120, 200), 'bullet_highlight': (80, 210, 255),
+            'card_bg': (16, 32, 52), 'gradient_start': (10, 25, 45), 'gradient_end': (20, 50, 80),
+        },
+        'Social Issues': {
+            'primary': (124, 45, 18), 'accent': (255, 165, 50), 'header': (100, 35, 14),
+            'badge_bg': (180, 80, 30), 'bullet_highlight': (255, 195, 100),
+            'card_bg': (55, 28, 15), 'gradient_start': (45, 22, 10), 'gradient_end': (124, 45, 18),
+        },
+        'Security': {
+            'primary': (120, 30, 30), 'accent': (240, 80, 80), 'header': (95, 22, 22),
+            'badge_bg': (180, 45, 45), 'bullet_highlight': (255, 120, 120),
+            'card_bg': (55, 20, 20), 'gradient_start': (42, 15, 15), 'gradient_end': (120, 30, 30),
+        },
+        'Geography': {
+            'primary': (55, 85, 30), 'accent': (140, 200, 60), 'header': (42, 68, 22),
+            'badge_bg': (80, 130, 40), 'bullet_highlight': (170, 225, 90),
+            'card_bg': (30, 45, 18), 'gradient_start': (24, 38, 12), 'gradient_end': (55, 85, 30),
+        },
+        'History': {
+            'primary': (100, 60, 20), 'accent': (218, 165, 32), 'header': (80, 48, 15),
+            'badge_bg': (160, 100, 30), 'bullet_highlight': (240, 200, 80),
+            'card_bg': (50, 35, 15), 'gradient_start': (40, 28, 10), 'gradient_end': (100, 60, 20),
+        },
+        'Current Affairs': {
+            'primary': (26, 54, 93), 'accent': (66, 153, 225), 'header': (20, 45, 80),
+            'badge_bg': (37, 99, 186), 'bullet_highlight': (100, 180, 255),
+            'card_bg': (22, 38, 62), 'gradient_start': (15, 35, 70), 'gradient_end': (26, 54, 93),
+        },
     }
 
     EXAM_TAG_COLORS = {
@@ -66,13 +106,28 @@ class PresentationSlideGenerator:
         'BOTH': (56, 161, 105),
     }
 
-    def __init__(self, content_start_x_pct: float = 0.33):
+    def __init__(
+        self,
+        content_start_x_pct: float = 0.33,
+        max_key_points: int = 4,
+        show_subject_badge: bool = True,
+        show_terms_as_badges: bool = True,
+        bullet_style: str = "numbered",
+    ):
         """
         Args:
             content_start_x_pct: Fraction of width where slide content starts
                                  (left of this is avatar territory).
+            max_key_points: Max bullet points to show (4 fits best with larger fonts).
+            show_subject_badge: Show prominent subject badge bar on right panel.
+            show_terms_as_badges: Show terms as pill badges instead of a table.
+            bullet_style: 'numbered' for circled numbers, 'dots' for classic dots.
         """
         self.content_start_x_pct = content_start_x_pct
+        self.max_key_points = max_key_points
+        self.show_subject_badge = show_subject_badge
+        self.show_terms_as_badges = show_terms_as_badges
+        self.bullet_style = bullet_style
         self._load_fonts()
         logger.info("PresentationSlideGenerator initialized")
 
@@ -82,18 +137,26 @@ class PresentationSlideGenerator:
         sizes = {
             'title': 42,
             'heading': 32,
-            'body': 26,
+            'section_label': 22,
+            'body': 30,
+            'sub_body': 24,
             'small': 20,
             'tiny': 16,
             'tag': 18,
+            'number': 34,
         }
         for name, size in sizes.items():
-            self.fonts[name] = self._try_load_font(size)
+            bold = name in ('heading', 'number')
+            self.fonts[name] = self._try_load_font(size, bold=bold)
 
     @staticmethod
-    def _try_load_font(size: int) -> ImageFont.FreeTypeFont:
-        for path in ["arial.ttf", "arialbd.ttf",
-                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]:
+    def _try_load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+        if bold:
+            paths = ["arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+        else:
+            paths = ["arial.ttf", "arialbd.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+        for path in paths:
             try:
                 return ImageFont.truetype(path, size)
             except Exception:
@@ -176,116 +239,44 @@ class PresentationSlideGenerator:
         width, height = video_size
         colors = self.THEMES.get(slide.subtitle, self.THEMES['Current Affairs'])
 
-        # Dark background
         img = Image.new('RGB', (width, height), (14, 18, 28))
         draw = ImageDraw.Draw(img)
 
         content_x = int(width * self.content_start_x_pct)
-        padding = 25
-        right_margin = 40
-
-        # ── 1. Header bar (full width gradient) ─────────────────────────
         header_h = 90
-        self._draw_header(draw, img, slide, width, header_h, colors)
-
-        # ── 2. Left decorative area (where avatar will be) ──────────────
-        # Subtle vertical accent line separating avatar area from content
-        accent_x = content_x - 10
-        draw.line([(accent_x, header_h + 10), (accent_x, height - 70)],
-                  fill=colors['accent'], width=3)
-
-        # Subtle gradient glow on left side
-        for x in range(0, content_x - 15):
-            alpha = int(12 * (1 - x / (content_x - 15)))
-            draw.line([(x, header_h), (x, height - 60)],
-                      fill=(colors['accent'][0], colors['accent'][1], colors['accent'][2]))
-
-        # Re-draw background over the gradient (keep it very subtle)
-        overlay = Image.new('RGBA', (content_x - 15, height - header_h - 60), (14, 18, 28, 220))
-        img.paste(Image.alpha_composite(
-            Image.new('RGBA', overlay.size, (14, 18, 28, 255)), overlay
-        ).convert('RGB'), (0, header_h))
-
-        draw = ImageDraw.Draw(img)
-
-        # Re-draw accent line (might have been covered)
-        draw.line([(accent_x, header_h + 10), (accent_x, height - 70)],
-                  fill=colors['accent'], width=3)
-
-        # ── 3. Bullet points ────────────────────────────────────────────
-        y_cursor = header_h + 30
-
-        if slide.bullet_points:
-            # Section label
-            draw.text((content_x + padding, y_cursor), "KEY POINTS",
-                      fill=colors['accent'], font=self.fonts['tag'])
-            y_cursor += 30
-
-            # Underline
-            draw.line([(content_x + padding, y_cursor),
-                       (content_x + padding + 100, y_cursor)],
-                      fill=colors['accent'], width=2)
-            y_cursor += 15
-
-            max_text_w = width - content_x - padding - right_margin
-            for j, point in enumerate(slide.bullet_points[:5]):
-                bullet_y = y_cursor + 5
-
-                # Bullet dot
-                dot_r = 5
-                draw.ellipse([content_x + padding, bullet_y + 4,
-                              content_x + padding + dot_r * 2, bullet_y + 4 + dot_r * 2],
-                             fill=colors['accent'])
-
-                # Text (with wrapping)
-                text_x = content_x + padding + 20
-                wrapped = self._wrap_text(point, max_text_w - 20,
-                                          self.fonts['body'], draw)
-                draw.text((text_x, bullet_y), wrapped,
-                          fill=(230, 235, 245), font=self.fonts['body'])
-
-                # Calculate height used
-                lines = wrapped.count('\n') + 1
-                y_cursor += lines * 32 + 12
-
-        # ── 4. Table (important terms or structured data) ────────────────
-        if slide.table_data and y_cursor < height - 200:
-            y_cursor += 15
-            y_cursor = self._draw_table(draw, slide.table_data, y_cursor,
-                                        content_x + padding, width - right_margin,
-                                        colors)
-        elif slide.important_terms and y_cursor < height - 200:
-            y_cursor += 15
-            y_cursor = self._draw_terms(draw, slide.important_terms, y_cursor,
-                                        content_x + padding, width - right_margin,
-                                        colors)
-
-        # ── 5. Footer bar ────────────────────────────────────────────────
         footer_h = 55
         footer_y = height - footer_h
-        draw.rectangle([(0, footer_y), (width, height)],
-                       fill=colors['header'])
 
-        # Footer left: channel / branding
-        draw.text((20, footer_y + 15), "UPSC Current Affairs",
-                  fill=(200, 210, 230), font=self.fonts['small'])
+        # 1. Header bar (full width)
+        self._draw_header(draw, img, slide, width, header_h, colors)
 
-        # Footer center: subject
-        sub_text = slide.subtitle
-        sub_bbox = draw.textbbox((0, 0), sub_text, font=self.fonts['small'])
-        sub_w = sub_bbox[2] - sub_bbox[0]
-        draw.text(((width - sub_w) // 2, footer_y + 15), sub_text,
-                  fill=colors['accent'], font=self.fonts['small'])
+        # 2. Right panel gradient background (subject-tinted)
+        self._draw_right_panel_gradient(draw, content_x, header_h, footer_y, width, colors)
 
-        # Footer right: topic number
-        topic_text = f"Topic {slide.topic_number}"
-        t_bbox = draw.textbbox((0, 0), topic_text, font=self.fonts['small'])
-        draw.text((width - (t_bbox[2] - t_bbox[0]) - 20, footer_y + 15),
-                  topic_text, fill=(200, 210, 230), font=self.fonts['small'])
+        # 3. Left avatar area decoration
+        self._draw_avatar_area(draw, content_x, header_h, footer_y, colors)
 
-        # Top accent line on footer
-        draw.line([(0, footer_y), (width, footer_y)],
-                  fill=colors['accent'], width=3)
+        # 4. Subject badge bar (prominent subject label)
+        y_cursor = header_h + 8
+        if self.show_subject_badge:
+            y_cursor = self._draw_subject_badge_bar(draw, slide, content_x, width, y_cursor, colors)
+
+        # 5. Numbered key points (larger, with card backgrounds)
+        y_cursor = self._draw_key_points_enhanced(draw, slide, content_x, width, y_cursor, colors)
+
+        # 6. Terms as pill badges (or fallback to table)
+        if y_cursor < footer_y - 60:
+            if slide.important_terms and self.show_terms_as_badges:
+                y_cursor = self._draw_terms_as_badges(draw, slide, content_x, width, y_cursor, footer_y, colors)
+            elif slide.table_data:
+                y_cursor = self._draw_table(draw, slide.table_data, y_cursor,
+                                            content_x + 20, width - 30, colors)
+            elif slide.important_terms:
+                y_cursor = self._draw_terms(draw, slide.important_terms, y_cursor,
+                                            content_x + 20, width - 30, colors)
+
+        # 7. Footer bar
+        self._draw_footer(draw, slide, width, height, footer_h, colors)
 
         return img
 
@@ -342,6 +333,220 @@ class PresentationSlideGenerator:
             )
             draw.text((tag_x + 10, tag_y + 4), tag_text,
                       fill=(255, 255, 255), font=tag_font)
+
+    def _draw_right_panel_gradient(self, draw, content_x, header_h, footer_y, width, colors):
+        """Draw a subtle subject-colored gradient on the right panel area."""
+        panel_h = footer_y - header_h
+        gs = colors.get('gradient_start', colors['primary'])
+        ge = colors.get('gradient_end', colors['header'])
+        for y_offset in range(panel_h):
+            t = y_offset / max(panel_h, 1)
+            r = int(gs[0] * (1 - t) + ge[0] * t)
+            g = int(gs[1] * (1 - t) + ge[1] * t)
+            b = int(gs[2] * (1 - t) + ge[2] * t)
+            draw.line(
+                [(content_x, header_h + y_offset), (width, header_h + y_offset)],
+                fill=(r, g, b)
+            )
+
+    def _draw_avatar_area(self, draw, content_x, header_h, footer_y, colors):
+        """Draw minimal decoration for the left avatar zone."""
+        accent_x = content_x - 6
+        draw.line(
+            [(accent_x, header_h + 10), (accent_x, footer_y - 10)],
+            fill=colors['accent'], width=3
+        )
+
+    def _draw_subject_badge_bar(self, draw, slide, content_x, width, y_start, colors):
+        """Draw a prominent subject category banner across the right panel."""
+        bar_height = 42
+        bar_x_start = content_x + 5
+        bar_x_end = width - 15
+        bar_y_end = y_start + bar_height
+
+        badge_bg = colors.get('badge_bg', colors['primary'])
+        draw.rounded_rectangle(
+            [bar_x_start, y_start, bar_x_end, bar_y_end],
+            radius=8, fill=badge_bg
+        )
+
+        subject_text = slide.subtitle.upper()
+        draw.text(
+            (bar_x_start + 18, y_start + 6),
+            subject_text,
+            fill=(255, 255, 255), font=self.fonts['heading']
+        )
+
+        if slide.exam_tag:
+            tag_color = self.EXAM_TAG_COLORS.get(slide.exam_tag, (100, 100, 100))
+            tag_text = slide.exam_tag
+            tag_bbox = draw.textbbox((0, 0), tag_text, font=self.fonts['tag'])
+            tag_w = tag_bbox[2] - tag_bbox[0] + 16
+            tag_h = tag_bbox[3] - tag_bbox[1] + 8
+            tag_x = bar_x_end - tag_w - 10
+            tag_y = y_start + (bar_height - tag_h) // 2
+            draw.rounded_rectangle(
+                [tag_x, tag_y, tag_x + tag_w, tag_y + tag_h],
+                radius=4, fill=tag_color
+            )
+            draw.text((tag_x + 8, tag_y + 3), tag_text,
+                      fill=(255, 255, 255), font=self.fonts['tag'])
+
+        return bar_y_end + 10
+
+    def _draw_key_points_enhanced(self, draw, slide, content_x, width, y_start, colors):
+        """Draw numbered key points with card backgrounds and large readable text."""
+        padding = 20
+        right_margin = 30
+        max_points = self.max_key_points
+
+        if not slide.bullet_points:
+            return y_start
+
+        label_x = content_x + padding
+        draw.text((label_x, y_start), "KEY POINTS",
+                  fill=colors['accent'], font=self.fonts['section_label'])
+        y_start += 28
+        draw.line([(label_x, y_start), (label_x + 120, y_start)],
+                  fill=colors['accent'], width=2)
+        y_start += 12
+
+        circle_size = 30  # diameter of number circle
+        text_x_offset = circle_size + 18  # gap after circle
+        max_text_w = width - content_x - padding - right_margin - text_x_offset
+
+        bullet_hl = colors.get('bullet_highlight', colors['accent'])
+        card_bg = colors.get('card_bg', (22, 28, 42))
+
+        for j, point in enumerate(slide.bullet_points[:max_points]):
+            card_y = y_start + 2
+
+            # Measure text to determine card height
+            text_x = content_x + padding + text_x_offset
+            wrapped = self._wrap_text(point, max_text_w, self.fonts['body'], draw, max_lines=2)
+            lines = wrapped.count('\n') + 1
+            text_h = lines * 36 + 10  # 36px line height for 30px font
+            card_h = max(text_h + 16, 56)
+
+            card_x_start = content_x + padding - 5
+            card_x_end = width - right_margin + 5
+
+            # Card background
+            draw.rounded_rectangle(
+                [card_x_start, card_y, card_x_end, card_y + card_h],
+                radius=6, fill=card_bg
+            )
+
+            # Left accent stripe
+            draw.rectangle(
+                [card_x_start, card_y + 4, card_x_start + 4, card_y + card_h - 4],
+                fill=colors['accent']
+            )
+
+            # Numbered circle or dot
+            circle_x = content_x + padding + 8
+            circle_y = card_y + (card_h - circle_size) // 2
+
+            if self.bullet_style == "numbered":
+                draw.ellipse(
+                    [circle_x, circle_y, circle_x + circle_size, circle_y + circle_size],
+                    fill=bullet_hl
+                )
+                num_text = str(j + 1)
+                num_bbox = draw.textbbox((0, 0), num_text, font=self.fonts['small'])
+                num_w = num_bbox[2] - num_bbox[0]
+                num_h = num_bbox[3] - num_bbox[1]
+                draw.text(
+                    (circle_x + circle_size // 2 - num_w // 2,
+                     circle_y + circle_size // 2 - num_h // 2 - 1),
+                    num_text, fill=(20, 25, 40), font=self.fonts['small']
+                )
+            else:
+                dot_r = 6
+                dot_cx = circle_x + circle_size // 2
+                dot_cy = circle_y + circle_size // 2
+                draw.ellipse(
+                    [dot_cx - dot_r, dot_cy - dot_r, dot_cx + dot_r, dot_cy + dot_r],
+                    fill=bullet_hl
+                )
+
+            # Point text
+            text_y = card_y + (card_h - text_h) // 2 + 5
+            draw.text((text_x, text_y), wrapped,
+                      fill=(235, 240, 250), font=self.fonts['body'])
+
+            y_start = card_y + card_h + 8
+
+        return y_start
+
+    def _draw_terms_as_badges(self, draw, slide, content_x, width, y_start, footer_y, colors):
+        """Draw important terms as colored pill badges in a flow layout."""
+        terms = slide.important_terms
+        if not terms:
+            return y_start
+
+        padding = 20
+        right_margin = 30
+
+        label_x = content_x + padding
+        draw.text((label_x, y_start), "KEY TERMS",
+                  fill=colors['accent'], font=self.fonts['section_label'])
+        y_start += 30
+
+        badge_x = content_x + padding
+        badge_y = y_start
+        max_x = width - right_margin
+        badge_h = 30
+        badge_gap_x = 10
+        badge_gap_y = 8
+        badge_font = self.fonts['small']
+        badge_bg = colors.get('badge_bg', colors['primary'])
+
+        for term, _definition in list(terms.items())[:6]:
+            text_bbox = draw.textbbox((0, 0), term, font=badge_font)
+            text_w = text_bbox[2] - text_bbox[0]
+            badge_w = text_w + 20
+
+            if badge_x + badge_w > max_x:
+                badge_x = content_x + padding
+                badge_y += badge_h + badge_gap_y
+
+            if badge_y + badge_h > footer_y - 10:
+                break
+
+            draw.rounded_rectangle(
+                [badge_x, badge_y, badge_x + badge_w, badge_y + badge_h],
+                radius=badge_h // 2,
+                fill=badge_bg, outline=colors['accent'], width=1
+            )
+            draw.text(
+                (badge_x + 10, badge_y + 5),
+                term, fill=(255, 255, 255), font=badge_font
+            )
+
+            badge_x += badge_w + badge_gap_x
+
+        return badge_y + badge_h + 15
+
+    def _draw_footer(self, draw, slide, width, height, footer_h, colors):
+        """Draw the bottom footer bar."""
+        footer_y = height - footer_h
+        draw.rectangle([(0, footer_y), (width, height)], fill=colors['header'])
+        draw.line([(0, footer_y), (width, footer_y)], fill=colors['accent'], width=3)
+
+        draw.text((20, footer_y + 15), "UPSC Current Affairs",
+                  fill=(200, 210, 230), font=self.fonts['small'])
+
+        sub_text = slide.subtitle
+        sub_bbox = draw.textbbox((0, 0), sub_text, font=self.fonts['small'])
+        sub_w = sub_bbox[2] - sub_bbox[0]
+        draw.text(((width - sub_w) // 2, footer_y + 15), sub_text,
+                  fill=colors['accent'], font=self.fonts['small'])
+
+        topic_text = f"Topic {slide.topic_number}"
+        t_bbox = draw.textbbox((0, 0), topic_text, font=self.fonts['small'])
+        draw.text((width - (t_bbox[2] - t_bbox[0]) - 20, footer_y + 15),
+                  topic_text, fill=(200, 210, 230), font=self.fonts['small'])
 
     def _draw_table(self, draw, table_data, y_start, x_start, x_end,
                     colors) -> int:
@@ -464,7 +669,8 @@ class PresentationSlideGenerator:
 
     def _wrap_text(self, text: str, max_width: int,
                    font: ImageFont.FreeTypeFont,
-                   draw: ImageDraw.ImageDraw) -> str:
+                   draw: ImageDraw.ImageDraw,
+                   max_lines: int = 3) -> str:
         """Wrap text to fit within max_width pixels."""
         words = text.split()
         lines = []
@@ -483,7 +689,7 @@ class PresentationSlideGenerator:
         if current:
             lines.append(' '.join(current))
 
-        return '\n'.join(lines[:3])  # max 3 lines
+        return '\n'.join(lines[:max_lines])
 
     def _truncate_text(self, text: str, max_width: int,
                        font: ImageFont.FreeTypeFont,

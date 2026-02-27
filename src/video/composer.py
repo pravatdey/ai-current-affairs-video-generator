@@ -93,10 +93,13 @@ class VideoComposer:
         # Initialize effects modules
         self.effects = VideoEffects()
         self.edu_effects = EducationalEffects()
+        slides_cfg = self.composition_config.get("presentation_slides", {})
         self.slide_generator = PresentationSlideGenerator(
-            content_start_x_pct=self.composition_config
-                .get("presentation_slides", {})
-                .get("content_start_x_pct", 0.33)
+            content_start_x_pct=slides_cfg.get("content_start_x_pct", 0.33),
+            max_key_points=slides_cfg.get("max_key_points", 4),
+            show_subject_badge=slides_cfg.get("show_subject_badge", True),
+            show_terms_as_badges=slides_cfg.get("show_terms_as_badges", True),
+            bullet_style=slides_cfg.get("bullet_style", "numbered"),
         )
 
         # UPSC mode settings
