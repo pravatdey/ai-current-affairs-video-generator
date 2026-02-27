@@ -172,18 +172,18 @@ class MetadataGenerator:
                 sources=sources_list,
                 topic_tags=" ".join(topic_tags)
             )
-            # Append PDF section after template content
-            description = description.rstrip() + "\n\n" + pdf_section
+            # Append PDF section after template content (only if PDF exists)
+            if pdf_section:
+                description = description.rstrip() + "\n\n" + pdf_section
         else:
             # Default description
+            pdf_part = f"\n{pdf_section}\n" if pdf_section else "\n"
             description = f"""Daily Current Affairs for {date} | Current Affairs Academy
 Language: {language}
 
 📌 Topics Covered Today:
 {topics_list}
-
-{pdf_section}
-📰 News Sources:
+{pdf_part}📰 News Sources:
 {sources_list}
 
 🔔 Subscribe for daily current affairs updates!
@@ -204,6 +204,10 @@ Language: {language}
         pdf_filename: str = None
     ) -> str:
         """Build the PDF study notes section for video description."""
+        # No PDF available - don't show the section at all
+        if not pdf_link and not pdf_filename:
+            return ""
+
         lines = [
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             "📄 FREE PDF STUDY NOTES - CURRENT AFFAIRS ACADEMY",
@@ -222,10 +226,8 @@ Language: {language}
         if pdf_link:
             lines.append("🔗 Download PDF Study Notes (Click the link below):")
             lines.append(pdf_link)
-        elif pdf_filename:
-            lines.append("🔗 PDF Study Notes: Check the pinned comment for download link")
         else:
-            lines.append("🔗 PDF Study Notes: Available - check pinned comment!")
+            lines.append("🔗 PDF Study Notes: Check the pinned comment for download link")
 
         lines.extend([
             "",
