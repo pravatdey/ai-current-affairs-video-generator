@@ -161,7 +161,7 @@ class MetadataGenerator:
         # Generate topic tags
         topic_tags = self._extract_topic_tags(headlines)
 
-        # Build PDF section
+        # Build PDF section with actual link (or empty if no PDF)
         pdf_section = self._build_pdf_section(pdf_link, pdf_filename)
 
         if template:
@@ -172,8 +172,19 @@ class MetadataGenerator:
                 sources=sources_list,
                 topic_tags=" ".join(topic_tags)
             )
-            # Append PDF section after template content (only if PDF exists)
-            if pdf_section:
+
+            # Replace the generic "PDF STUDY NOTES" block in the template
+            # with the real PDF section (containing Drive link) or remove it
+            pdf_block_pattern = r'={3,}\s*\n\s*PDF STUDY NOTES\s*\n\s*={3,}\s*\n.*?(?=\n\s*={3,}\s*\n\s*EXAM RELEVANCE|\Z)'
+            match = re.search(pdf_block_pattern, description, re.DOTALL)
+            if match:
+                if pdf_section:
+                    description = description[:match.start()] + pdf_section + description[match.end():]
+                else:
+                    # Remove the generic PDF block when no PDF exists
+                    description = description[:match.start()] + description[match.end():]
+            elif pdf_section:
+                # Template doesn't have a PDF block - append at end
                 description = description.rstrip() + "\n\n" + pdf_section
         else:
             # Default description
