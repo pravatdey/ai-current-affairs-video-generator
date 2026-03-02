@@ -37,6 +37,7 @@ class SlideContent:
     start_time: float = 0.0
     duration: float = 10.0
     table_data: Optional[List[List[str]]] = None
+    content: str = ""                          # script narration text (for fallback notes)
 
 
 class PresentationSlideGenerator:
@@ -194,16 +195,24 @@ class PresentationSlideGenerator:
             else:
                 duration = max(total_duration - start, 5.0)
 
+            bullet_points = segment.get('key_points', [])
+            content = segment.get('content', '')
+
+            # Fallback: extract key sentences from content when key_points is empty
+            if not bullet_points and content:
+                bullet_points = self._extract_points_from_content(content)
+
             slide = SlideContent(
                 title=segment.get('article_title', 'Topic'),
                 subtitle=segment.get('subject_category', 'Current Affairs'),
-                bullet_points=segment.get('key_points', []),
+                bullet_points=bullet_points,
                 important_terms=segment.get('important_terms', {}),
                 exam_tag=segment.get('exam_relevance', ''),
                 topic_number=i + 1,
                 start_time=start,
                 duration=duration,
                 table_data=self._extract_table_data(segment),
+                content=content,
             )
 
             try:
@@ -641,6 +650,55 @@ class PresentationSlideGenerator:
         return y_start + 10
 
     # ── Utilities ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_points_from_content(content: str, max_points: int = 4) -> List[str]:
+        """
+        Extract important sentences from narration content as fallback bullet points.
+        Picks the most informative sentences (containing facts, numbers, names).
+        """
+        import re
+
+        # Split content into sentences
+        sentences = re.split(r'[.!?]\s+', content.strip())
+        sentences = [s.strip().rstrip('.!?') for s in sentences if len(s.strip()) > 20]
+
+        if not sentences:
+            return []
+
+        # Score sentences by informativeness (numbers, proper nouns, key phrases)
+        scored = []
+        for sent in sentences:
+            score = 0
+            # Contains numbers / dates / percentages
+            if re.search(r'\d', sent):
+                score += 3
+            # Contains proper nouns (capitalized words not at start)
+            words = sent.split()
+            proper_nouns = sum(1 for w in words[1:] if w[0:1].isupper()) if len(words) > 1 else 0
+            score += proper_nouns
+            # Contains key indicator phrases
+            indicators = ['important', 'significant', 'launched', 'announced',
+                          'crore', 'billion', 'million', 'percent', '%',
+                          'first', 'new', 'key', 'major', 'historic']
+            score += sum(1 for ind in indicators if ind in sent.lower())
+            # Penalize very short or very long sentences
+            if len(sent) < 30:
+                score -= 2
+            if len(sent) > 200:
+                score -= 1
+            scored.append((score, sent))
+
+        # Sort by score descending and pick top sentences
+        scored.sort(key=lambda x: x[0], reverse=True)
+        points = []
+        for _score, sent in scored[:max_points]:
+            # Truncate long sentences
+            if len(sent) > 100:
+                sent = sent[:97] + "..."
+            points.append(sent)
+
+        return points
 
     @staticmethod
     def _parse_timestamp(ts: str) -> float:
