@@ -527,14 +527,13 @@ class AvatarGenerator:
             pass
 
         # ── 3. Default avatar known proportions ───────────────────────────────
-        # Our generated avatar (512 x 640) has mouth centre at (256, 265).
-        # Proportionally: cx = 50 %, cy = 41.4 % of height.
+        # Realistic avatar (1856 x 2304) has mouth centre at ~50% x, ~72% y.
         if avatar_image_path and Path(avatar_image_path).name == 'news_anchor.png':
             return {
                 'cx': img_w // 2,
-                'cy': int(img_h * 0.414),
-                'w': int(img_w * 0.156),
-                'h': int(img_h * 0.066),
+                'cy': int(img_h * 0.72),
+                'w': int(img_w * 0.15),
+                'h': int(img_h * 0.05),
                 'method': 'default_avatar_known',
             }
 

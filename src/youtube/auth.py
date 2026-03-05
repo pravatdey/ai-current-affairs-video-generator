@@ -220,7 +220,7 @@ class YouTubeAuth:
 
             # Run local server for OAuth callback
             self.credentials = flow.run_local_server(
-                port=8080,
+                port=0,
                 prompt="consent",
                 authorization_prompt_message="Please visit this URL to authorize: {url}",
                 success_message="Authentication successful! You can close this window."

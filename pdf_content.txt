@@ -1,0 +1,639 @@
+=== PAGE 1 ===
+DELHI | NOIDA | INDORE | JAIPUR | PRAYAGRAJ | LUCKNOW | RANCHI | PATNA 
+87501-87501
+www.drishtiias.com
+1/5
+20th February, 2026
+SARAANSH
+Daily
+DRISHTI IAS
+HATE SPEECH AND HATE CRIME 
+SC raised concerns over hate crimes & speech, urging restraint while hearing a plea for a legal framework to recognise 
+hate-based offences.
+Hate speech
+	
+a About: Refers to words/actions intended to incite 
+hatred against groups based on race, ethnicity, 
+gender, 
+religion, 
+sexual 
+orientation, 
+etc., 
+including speech or visuals that provoke fear or 
+violence (267th Law Commission Report (2017)). 
+	
+a Protection Against Hate Speech:
+	
+ Art. 19(1)(a): Guarantees free speech; Art. 
+19(2): Permits reasonable restrictions (public 
+order, dignity, sovereignty, incitement of 
+offences).
+	
+ BNS, 2023: Penalises promoting enmity b/w 
+groups.
+	
+ RPA 1951: Disqualifies candidates convicted 
+of promoting communal disharmony.
+	
+ SC/ST 
+(Prevention 
+of 
+Atrocities) 
+Act, 
+1989: Punishes insults/humiliation of SC/ST 
+members.
+	
+ Protection of Civil Rights Act, 1955: Penalises 
+acts promoting untouchability.
+	
+a Key SC Judgements:
+	
+ Shaheen Abdulla v. UoI (2022): Directed police to take suo 
+motu action against hate speech.
+	
+ Tehseen S. Poonawalla v. UoI (2018): Issued guidelines 
+to curb mob lynching, including appointment of district 
+nodal officers.
+	
+ Shreya Singhal v. UoI (2015): Struck down Sec 66A, IT Act, 
+2000 as vague; upheld Art. 19(1)(a).
+	
+ Pravasi Bhalai Sangathan v. UoI (2014): Urged Law 
+Commission to define hate speech and explore 
+empowering the Election Commission to regulate it.
+Hate Crime
+	
+a About: Crime motivated by bias against race, colour, religion, 
+national origin, sexual orientation, gender, gender identity, 
+or disability.
+	
+a Protection: No specific legal definition in India. Provisions 
+under BNS, 2023 & SC/ST (Prevention of Atrocities) Act, 
+1989 address mob lynching, caste-based violence, attacks on 
+Dalits/minorities, and gender/sexuality-based assaults.
+Challenges in Curbing Hate Speech and Hate Crime
+Suggestions
+ 
+•
+Legal Challenge: 
+	
+♦
+Vague definitions: No standalone “hate crime” law under BNS, 
+2023; terms like annoyance, insult, disharmony are subjective.
+	
+♦
+Proving intent: Conviction requires proof of malicious intent/
+bias motive, creating major evidentiary hurdles.
+ 
+•
+Enforcement Gap:
+	
+♦
+Weak suo motu action: Despite SC directions, police action is 
+inconsistent, especially against influential persons.
+	
+♦
+Low conviction rates: Poor evidence collection & political 
+pressure lead to frequent acquittals.
+ 
+•
+Digital Dilemma:
+	
+♦
+Algorithmic amplification: Social media platforms prioritise 
+engaging content, often boosting sensationalist & hateful 
+rhetoric.
+	
+♦
+Anonymity: Use of VPNs & fake accounts enables offenders to 
+act with impunity.
+	
+♦
+Transnational nature: Content hosted outside India hinders 
+takedown and prosecution by local authorities.
+ 
+•
+Societal Challenge: 
+	
+♦
+Electoral gains: Fear-mongering & exclusionary narratives used 
+for political mobilisation make hate politically profitable.
+	
+♦
+Historical prejudices: Deep-rooted caste & religious hierarchies 
+enable hate speech to escalate into violence.
+	
+♦
+Statistical blind spot: NCRB lacks specific data on lynchings/
+religious killings, obscuring the scale of the problem.
+ 
+•
+Codify definition: Enact a standalone law defining 
+Hate Speech and Hate Crime based on incitement 
+to violence, discrimination, or severe exclusion.
+ 
+•
+Constitutional tort liability: Treat hate speech by 
+public officials as a civil wrong; enable damages 
+for violation of Art. 14 and Art. 21.
+ 
+•
+Service rule enforcement: Amend All India Service 
+Rules to classify failure to prevent/report hate 
+speech as major misconduct.
+ 
+•
+Vishakha-style code of conduct: Frame judicial 
+guidelines imposing a duty of restraint on 
+Constitutional functionaries to uphold fraternity.
+ 
+•
+Suo motu FIR mandate: Strictly enforce SC (2022) 
+directive; treat delay in registering cases as 
+contempt of court.
+ 
+•
+24-hour digital takedown: Under IT Rules, 2026, 
+create a priority channel for District Nodal Officers 
+to remove inflammatory content within 24 hours.
+ 
+•
+Fast-track “Hate Courts”: Set up special courts to 
+complete trials within 6 months.
+ 
+•
+Media literacy: 
+Integrate 
+critical 
+thinking 
+in 
+NCERT curriculum to counter misinformation and 
+“othering.”
+ 
+•
+Community 
+peace 
+committees: 
+Establish 
+ward-level, diverse local bodies to de-escalate 
+communal tensions early.
+
+
+=== PAGE 2 ===
+DELHI | NOIDA | INDORE | JAIPUR | PRAYAGRAJ | LUCKNOW | RANCHI | PATNA 
+87501-87501
+www.drishtiias.com
+2
+2/5
+CURBING FREEBIES CULTURE
+SC expressed concern over political parties and state governments announcing freebies and cash transfers to woo 
+voters, questioning if they amount to appeasement and hinder national development.
+Freebies
+	
+a About: Welfare benefits provided free by governments or 
+promised by political parties to attract voter support.
+	
+a Characteristics: Populist & distortionary; divert funds from 
+long-term 
+investment; 
+fiscally 
+unsustainable; 
+promote 
+dependency.
+	
+a Legal and Institutional Landscape:
+	
+ S. Subramaniam Balaji Case (2013): SC held freebies are 
+a matter of legislative policy and beyond judicial review; 
+some align with DPSP.
+	
+ 2022: SC proposed an expert group (NITI Aayog, Finance 
+Commission, EC, RBI, political parties) to study impact; not 
+formed.
+	
+♦
+2025 (PIL hearing): SC criticised pre-election freebies, 
+stating free ration/money discourage work & create 
+dependency.
+	
+ ECI: Under Model Code of Conduct, manifestos are not 
+corrupt practices under RPA, 1951, but parties should 
+avoid promises that vitiate electoral purity or exert undue 
+influence.
+	
+ RBI: Distinguishes freebies from merit goods (e.g., 
+education); warns that loan waivers, free power & cash 
+transfers crowd out infrastructure spending and strain 
+state finances.
+Concerns Associated with Freebies
+	
+a Rising debt burden: Economic Survey 2025–26 
+estimates ~₹1.7 lakh crore cost in FY26; states’ 
+gross fiscal deficit rose from 2.6% (FY22) to 
+3.2% (FY25); outstanding liabilities at ~28.1% 
+of GDP.
+	
+a Crowding 
+out 
+of 
+productive 
+capital: 
+Diverts funds from infrastructure and long-
+term 
+growth, 
+undermining 
+medium-term 
+development.
+	
+a Electoral & Democratic concerns: Pre-election 
+freebies from public funds influence voters, 
+distort level playing field, akin to unethical 
+inducements.
+	
+a Creation of Dependency Culture: Cash 
+transfers constitute 11–24% (female casual 
+labourers) and up to 87% (some self-employed 
+women) of income; risk of reduced self-reliance.
+	
+ Venezuela – extensive freebies linked to 
+economic collapse (~2000).
+	
+a Limited impact: Short-term consumption 
+gains; no consistent improvement in nutrition, 
+education, or sustained poverty exit without 
+jobs/services.
+Aspect
+Freebies 
+Welfare
+Definition
+ 
+•
+Free public welfare measures; often 
+short-term and populist.
+ 
+•
+Rights-based, developmental interventions aligned 
+with DPSP.
+Primary Objective 
+ 
+•
+Aim 
+at 
+immediate voter appeal/
+electoral gains.
+ 
+•
+Aim 
+at 
+long-term socio-economic upliftment, 
+human capital formation, poverty reduction.
+Time Horizon
+ 
+•
+Usually announced near elections; 
+limited sustainability planning.
+ 
+•
+Sustainable and institutionalised; 
+designed 
+for 
+enduring impact.
+Targeting
+ 
+•
+Often universal, irrespective of income.
+ 
+•
+Targeted at vulnerable groups to avoid universal waste.
+Fiscal Sustainability
+ 
+•
+Strain state finances; crowd out capital 
+expenditure; raise deficits/liabilities.
+ 
+•
+Emphasise fiscal prudence and merit goods with high 
+growth multiplier.
+Economic Impact
+ 
+•
+Risk of dependency, market distortion, 
+weakened credit discipline.
+ 
+•
+Promote human development, equity, productivity, 
+inclusive growth.
+Examples
+ 
+•
+Free 
+laptops/smart 
+phones/TVs, 
+universal free electricity, unconditional 
+cash transfers, farm loan waivers.
+ 
+•
+PDS, 
+Mid-Day 
+Meal 
+Scheme, 
+targeted 
+health/
+education, nutrition schemes.
+Steps to Curb Freebies
+	
+a Differentiate freebies vs welfare: Frame objective criteria—social utility, long-term human development impact, 
+fiscal sustainability, targeting effectiveness, outcome orientation; classify merit goods separately from non-merit 
+subsidies.
+	
+a Budgetary discipline: Strengthen FRBM Act, 2003; mandate sunset clauses and periodic review for subsidy schemes.
+	
+ Improve tracking of off-budget borrowings and hidden subsidies (e.g., electricity underpricing) through stronger 
+financial oversight.
+
+
+=== PAGE 3 ===
+DELHI | NOIDA | INDORE | JAIPUR | PRAYAGRAJ | LUCKNOW | RANCHI | PATNA 
+87501-87501
+www.drishtiias.com
+3/5
+	
+a Enhance voter awareness: Highlight opportunity cost of freebies; encourage civil society/media scrutiny of fiscal 
+impact of electoral promises.
+	
+a International best practices: Design conditional, review-based, time-bound cash transfers (e.g., Mexico – Progresa; 
+Brazil – Bolsa Familia linking aid to school attendance/health check-ups).
+	
+a Strengthen legal framework: Consider amendments to RPA, 1951 to address undue influence; mandate disclosure of 
+funding sources and fiscal viability of manifesto promises.
+INDIA’S M.A.N.A.V. VISION FOR AI
+At the India-AI Impact Summit 2026, PM unveiled the M.A.N.A.V. vision, a human-centric AI framework focused on 
+ethics, inclusivity, and national sovereignty.
+India’s M.A.N.A.V. Vision for AI
+	
+a Shifts AI from autonomous force to becoming extension of human aspirations.
+	
+a 5 foundational pillars:
+	
+ M – Moral & Ethical Systems: AI built on strict ethical guidelines.
+	
+ A – Accountable Governance: Transparent rules & 
+strong oversight mechanisms.
+	
+ N – National Sovereignty: Data ownership rests 
+with its creators.
+	
+ A – Accessible & Inclusive: Broad societal benefit; 
+prevent concentration.
+	
+ V – Valid & Legitimate Systems: Lawful, verifiable, trustworthy AI.
+	
+a Views AI as a strategic asset  & global common good, backed by India’s talent pool, digital infrastructure, and policy 
+clarity.
+India’s Efforts in Advancing the M.A.N.A.V. Vision for AI
+Ensuring Moral and Ethical AI Systems
+	
+a NEP 
+2020: 
+Integrates 
+digital 
+literacy, 
+computational thinking, and AI education early.
+	
+a Public engagement: India-AI Impact Summit 
+2026 recorded 2,50,946+ pledges for AI 
+responsibility (Guinness World Record).
+Mechanisms to Drive 
+Accountable Governance in AI
+	
+a IndiaAI Mission: ₹10,300+ crore outlay; builds 
+governance into AI ecosystem (compute, data, 
+skilling, innovation). Institutionalises standards 
+for AI development, deployment, monitoring.
+	
+a AI Governance Guidelines 2025: Transparent 
+regulatory framework based on trust, equity, 
+accountability, constitutional values.
+National Sovereignty in the Digital Era
+	
+a Digital sovereignty: Extends to data, algorithms, digital 
+infrastructure.
+	
+a Self-reliance: India Semiconductor Mission; secure digital 
+public infrastructure; strengthened domestic compute 
+capacity.
+	
+a Strategic autonomy: Focus on chips/cloud; joined US-led Pax 
+Silica Initiative (India-AI Impact Summit 2026).
+Ensuring  Accessible and Inclusive AI
+	
+a Digital Public Infrastructure (DPI): Scalable AI solutions in 
+healthcare, agriculture, education, governance.
+	
+a Democratising computing: MeghRaj GI Cloud, IndiaAI 
+Compute Portal provide shared access to GPUs/TPUs.
+	
+a Grassroots capacity: IndiaAI Kosh, AI Data Labs Network, 
+National Supercomputing Mission expand broad-based AI 
+innovation.
+Regulating AI for Trust, Safety, and Legality
+	
+a Tackling Deepfakes: Ensure AI systems are legally verifiable & transparent to protect democratic discourse and 
+social trust.
+	
+a IT Amendment Rules, 2026: Define & strictly regulate synthetic content; enforce platform accountability.
+	
+a Safe & Trusted AI Pillar (IndiaAI Mission): Focus on bias mitigation, algorithmic audits, privacy-preserving design 
+to operationalise ethical standards.
+GRAPHICS PROCESSING UNIT
+GPU, first developed by Nvidia (GeForce 256, 1999) for gaming graphics, has evolved into core digital infrastructure, 
+essential for AI, machine learning, and high-performance computing due to its massive parallel processing architecture.
+	
+ª
+AI Impact Summit 2027: To be hosted by 
+Switzerland (Geneva); focus on international 
+AI law and inclusive governance.
+	
+ª
+AI Impact Summit 2028: To be hosted by UAE; 
+continues global cooperation on responsible AI.
+
+
+=== PAGE 4 ===
+DELHI | NOIDA | INDORE | JAIPUR | PRAYAGRAJ | LUCKNOW | RANCHI | PATNA 
+87501-87501
+www.drishtiias.com
+4/5
+	
+a About GPU: High-performance processor designed for massive parallel calculations; handles many simple tasks 
+simultaneously (unlike CPU).
+	
+ Optimised for large repetitive workloads (e.g., graphics rendering).
+	
+ Example: A 1920×1080 display (~2.07 million pixels/frame) at 60 frames/sec requires updating 120+ million 
+pixels/sec, with each pixel computed for lighting, textures, shadows, etc.
+	
+a Working of GPU: A game sends the GPU a list of objects made of triangles, which the GPU renders using a 4-step 
+rendering pipeline.
+	
+ Vertex processing: Calculates triangle positions using matrix maths (rotation, camera perspective).
+	
+ Rasterisation: Converts triangle geometry into pixel candidates.
+	
+ Fragment/Pixel shading: Computes final colour (textures, lighting, shadows, reflections).
+	
+ Writing to Frame buffer: Finished pixel colours stored in memory area read by display system
+	
+a Shaders and VRAM: 
+	
+ Shaders: Small parallel programs processing vertices/pixels; handle 3D models, textures, lighting, final images.
+	
+ VRAM: High-bandwidth dedicated memory for massive data transfer; caches/shared memory reduce bottlenecks.
+	
+a GPU Location: Either discrete chip on motherboard/graphics card (with VRAM, heat sink). Or integrated with CPU in 
+system-on-chip (common in laptops/smartphones).
+	
+a GPUs vs CPUs: Use same silicon transistors and fabrication nodes (e.g., 3–5 nm) but differ in microarchitecture.
+	
+ CPUs: More die area for complex control logic & cache (decision-making).
+	
+ GPUs: More space for repeated compute units, wide data paths, memory controllers (parallel processing).
+	
+♦
+High-end GPUs: More transistors, larger size, often with high-bandwidth DRAM close to die for rapid data 
+transfer. Designed for efficient massive parallel data processing.
+	
+a Global Players: 
+	
+ Nvidia: ~90% share in discrete PC GPUs; dominant in data centres due to hardware performance and CUDA 
+software platform.
+	
+ AMD & Intel: Account for remaining market share.
+IRAN TEMPORARILY CLOSES THE STRAIT OF HORMUZ
+Iran announced a temporary closure of parts of 
+the Strait of Hormuz for live-fire naval drills, “Smart 
+Control of the Strait of Hormuz,” coinciding with 
+the second round of indirect Iran–US nuclear talks in 
+Geneva.
+	
+a Location: Narrow chokepoint (55–95 km wide) 
+b/w Iran (north) and Oman & UAE (south).
+	
+ Connects Persian Gulf (West) to Gulf of 
+Oman & Arabian Sea (East); acts as the only 
+sea outlet of the Persian Gulf.
+	
+a Global energy hub: ~20% of global oil & gas 
+passes through.
+	
+ Key exporters– Saudi Arabia, Iran, Iraq, Kuwait, 
+UAE, Qatar.
+	
+ 80%+ exports destined for Asian markets 
+(India, China, Japan, South Korea).
+	
+a Impact on India: ~50% of crude oil and 60% of 
+natural gas imports pass through the Strait.
+	
+a Alternative Routes: Saudi Arabia & UAE have bypass pipelines, but capacity is limited and cannot replace full Hormuz 
+transit.
+	
+a Historical Leverage: Iran threatened closure during 1980s Iran–Iraq Tanker War and 2012 sanctions on Iran, but 
+never fully executed a complete shutdown.
+DRDO CONDUCTS GAGANYAAN’S DROGUE PARACHUTE TEST
+DRDO successfully conducted a qualification load test of the Drogue Parachute for the Gaganyaan programme at the 
+RTRS facility of TBRL, Chandigarh.
+	
+a RTRS Capabilities: Advanced, dynamic ground-based testing facility for high-speed aerodynamic and ballistic 
+evaluations.
+
+
+=== PAGE 5 ===
+DELHI | NOIDA | INDORE | JAIPUR | PRAYAGRAJ | LUCKNOW | RANCHI | PATNA 
+87501-87501
+www.drishtiias.com
+5/5
+	
+a Drogue Parachute Significance: Critical for safe crew module descent & recovery under Gaganyaan.
+	
+ Acts as a primary brake to stabilise and decelerate before main parachutes deploy.
+	
+ Tested at loads higher than maximum flight conditions to ensure safety margin.
+Gaganyaan
+	
+a About: India’s first human spaceflight programme; aims to send 3 astronauts to LEO (400 km) for 3 days and return 
+safely.
+	
+a Key tests: Air Drop Test (IADT), Pad Abort Test (PAT) & Test Vehicle (TV) flights to validate safety systems.
+	
+a Phases: Unmanned missions followed by first manned mission (expected early 2027).
+	
+a Crew training for Gaganyaan: Completed training in Russia; undergoing mission-specific training in India.
+	
+a Key Technologies for Crew Safety: HLVM3– Human-rated version of LVM3; uses solid, liquid, and cryogenic stages 
+to carry crew to 400 km LEO.
+	
+ Crew Escape System (CES): High-burn-rate motors for safe abort during launch emergencies.
+	
+ Orbital Module: Crew Module– Pressurised, Earth-like environment; ensures safe re-entry. Service Module– 
+Provides propulsion, power, and thermal control in orbit.
+BIRTH ANNIVERSARY OF CHHATRAPATI SHIVAJI MAHARAJ
+Union Home Minister paid tribute to Chhatrapati Shivaji Maharaj on his birth anniversary (19th Feb).
+	
+a About: Born on 19th Feb 1630, Shivneri Fort (near Pune). Founder of Maratha Empire; resisted Mughal rule; championed 
+self-governance.
+	
+a Major Battles: Pratapgad (1659), Pavan Khind (1660), Surat (1664), Purandar (1665), Sinhagad (1670), Sangamner 
+(1679).
+	
+ Wagh Nakh: Used to kill Afzal Khan in Battle of Pratapgad.
+	
+a Vision of Hindavi Swarajya: Pledged to establish Hindavi Swarajya (Self-Rule) based on indigenous sovereignty, 
+ethical governance, and freedom from foreign rule.
+	
+ Promoted Swadharma, Swaraj, and Swabhasha; replaced Persian with Marathi & Sanskrit in administration.
+	
+a Military & Naval Genius: Built an inclusive army from all sections of society. Pioneered Guerrilla Warfare tactics 
+(Ganimi Kava).
+	
+ Known as “Father of the Indian Navy”, developed strong naval fleet & coastal forts (e.g., Sindhudurg) to secure 
+the western coast.
+	
+a Progressive Administration: Governed through Ashtapradhan Mandal (Council of Eight Ministers).
+	
+ Introduced direct revenue assessment and collection from cultivators, reducing intermediary exploitation.
+	
+a Titles: Chhatrapati, Shakakarta, Kshatriya Kulavantas, Haindava Dharmodhhaarak.
+WORLD DAY OF SOCIAL JUSTICE 2026 
+Department of Social Justice & Empowerment marked World Day of Social Justice (20th Feb 2026), reaffirming 
+commitment to social, economic, and political justice, and the constitutional ideals of liberty, equality, and fraternity.
+	
+a Observed: 20th Feb; UN platform to promote poverty eradication, decent work, gender equality, social inclusion.
+	
+a Theme 2026: “Renewed Commitment to Social Development and Social Justice.”
+	
+a Origin: Based on 1995 Copenhagen Declaration; proclaimed by UNGA (2007); first observed in 2009.
+	
+a Pillars of Social Justice:
+	
+ Participation: Enabling involvement in political, economic, and social life
+	
+ Access: Ensuring resources and opportunities for all
+	
+ Rights: Protecting human rights for everyone
+	
+ Diversity: Valuing and respecting differences
+	
+ Equity: Recognizing diverse needs and circumstances
+	
+a Key Institutions: 
+	
+ ILO: Promotes Decent Work Agenda; adopted Declaration on Social Justice for a Fair Globalization (10 June 
+2008).
+	
+ UNDESA: Focuses on policy integration; civil society advocates mainstreaming social justice in economic, labour, 
+climate, and digital policies.
+	
+a SDG Linkages: SDG 1 (No Poverty), SDG 8 (Decent Work), SDG 10 (Reduced Inequalities).
+
+

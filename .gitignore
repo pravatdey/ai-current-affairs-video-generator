@@ -5,6 +5,7 @@
 *.key
 config/client_secrets.json
 config/token.json
+config/youtube_token.json
 config/youtube_token.pickle
 
 # Python
