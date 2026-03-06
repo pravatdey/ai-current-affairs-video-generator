@@ -30,6 +30,256 @@ class AvatarResult:
     error: Optional[str] = None
 
 
+class MouthSpriteSheet:
+    """
+    Pre-renders a set of mouth-position RGBA sprites (closed → wide-open)
+    and serves the right one per-frame based on audio amplitude.
+
+    Sprites are drawn at 2x then downscaled for anti-aliased edges.
+    A feathered alpha border lets each sprite blend seamlessly into the face.
+    """
+
+    NUM_LEVELS = 20  # enough discrete levels for smooth transitions
+
+    def __init__(self, mouth_region: dict, face_image):
+        from PIL import Image, ImageDraw, ImageFilter
+        import numpy as np
+
+        self._Image = Image
+        self._ImageDraw = ImageDraw
+        self._ImageFilter = ImageFilter
+        self._np = np
+
+        self.region = mouth_region
+        # Sprite canvas size (with padding for lips + feather)
+        self.sprite_w = int(mouth_region['w'] * 1.6)
+        self.sprite_h = int(mouth_region['h'] * 3.0)
+        # Ensure even dimensions
+        self.sprite_w += self.sprite_w % 2
+        self.sprite_h += self.sprite_h % 2
+
+        # Sample colours from the actual avatar face
+        self.lip_color = self._sample_lip_color(face_image, mouth_region)
+        self.skin_color = self._sample_skin_color(face_image, mouth_region)
+
+        # Pre-render all levels
+        self.sprites = []
+        for i in range(self.NUM_LEVELS):
+            open_ratio = i / (self.NUM_LEVELS - 1)
+            sprite = self._generate_sprite(open_ratio)
+            self.sprites.append(sprite)
+
+    # ── colour sampling ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _sample_lip_color(face_image, mouth_region):
+        import numpy as np
+        cx, cy, w = mouth_region['cx'], mouth_region['cy'], mouth_region['w']
+        x1 = max(0, cx - w // 3)
+        x2 = min(face_image.width, cx + w // 3)
+        y1 = max(0, cy - 3)
+        y2 = min(face_image.height, cy + 3)
+        arr = np.array(face_image.crop((x1, y1, x2, y2)))
+        if arr.size == 0:
+            return (185, 78, 78)
+        return tuple(int(v) for v in arr.mean(axis=(0, 1))[:3])
+
+    @staticmethod
+    def _sample_skin_color(face_image, mouth_region):
+        import numpy as np
+        cx, cy, w, h = (mouth_region['cx'], mouth_region['cy'],
+                         mouth_region['w'], mouth_region['h'])
+        x1 = max(0, cx - w // 4)
+        x2 = min(face_image.width, cx + w // 4)
+        y1 = max(0, cy - h - 8)
+        y2 = max(0, cy - h)
+        if y2 <= y1:
+            return (200, 160, 130)
+        arr = np.array(face_image.crop((x1, y1, x2, y2)))
+        if arr.size == 0:
+            return (200, 160, 130)
+        return tuple(int(v) for v in arr.mean(axis=(0, 1))[:3])
+
+    # ── feathered alpha mask ──────────────────────────────────────────────
+
+    def _feathered_mask(self, w, h, feather=6):
+        """Elliptical alpha mask with soft feathered edges."""
+        Image, ImageDraw, ImageFilter = self._Image, self._ImageDraw, self._ImageFilter
+        mask = Image.new('L', (w, h), 0)
+        d = ImageDraw.Draw(mask)
+        pad = feather
+        d.ellipse([pad, pad, w - pad, h - pad], fill=255)
+        return mask.filter(ImageFilter.GaussianBlur(radius=feather))
+
+    # ── single sprite generation ──────────────────────────────────────────
+
+    def _generate_sprite(self, open_ratio: float):
+        """Render one mouth sprite at the given openness (0 = closed, 1 = max open)."""
+        Image, ImageDraw, ImageFilter = self._Image, self._ImageDraw, self._ImageFilter
+        np = self._np
+
+        S = 2  # supersampling factor
+        sw, sh = self.sprite_w * S, self.sprite_h * S
+        cx, cy = sw // 2, sh // 2
+
+        canvas = Image.new('RGBA', (sw, sh), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+
+        mw = int(self.region['w'] * S * 0.9)   # mouth width at 2x
+        half_w = mw // 2
+
+        lip_r, lip_g, lip_b = self.lip_color
+        # Darken lip colour slightly for outer lip edge
+        lip_dark = (max(0, lip_r - 30), max(0, lip_g - 20), max(0, lip_b - 15))
+
+        if open_ratio < 0.05:
+            # ── CLOSED: subtle lip line ──────────────────────────────────
+            lip_thick = max(S * 2, int(self.region['h'] * S * 0.15))
+            # Upper lip arc
+            draw.arc(
+                [cx - half_w, cy - lip_thick, cx + half_w, cy + lip_thick // 3],
+                start=195, end=345,
+                fill=(*lip_dark, 180), width=lip_thick,
+            )
+            # Lower lip arc (slightly fuller)
+            draw.arc(
+                [cx - half_w + S * 2, cy - lip_thick // 3,
+                 cx + half_w - S * 2, cy + lip_thick + S],
+                start=15, end=165,
+                fill=(*lip_dark, 180), width=lip_thick,
+            )
+        else:
+            # ── OPEN: gradient cavity + soft lips + teeth ────────────────
+            # Scale opening: max ~70 % of mouth-region height for natural range
+            open_h = int(self.region['h'] * S * open_ratio * 0.85)
+            half_open = max(S * 2, open_h // 2)
+            lip_thick = max(S * 2, int(self.region['h'] * S * 0.18))
+            # Narrow the mouth slightly at small openings
+            eff_half_w = int(half_w * (0.85 + 0.15 * open_ratio))
+
+            # 1. Inner cavity — radial gradient (dark centre → slightly lighter edge)
+            cav_bbox = [cx - eff_half_w + lip_thick,
+                        cy - half_open,
+                        cx + eff_half_w - lip_thick,
+                        cy + half_open]
+            cav_w = cav_bbox[2] - cav_bbox[0]
+            cav_h = cav_bbox[3] - cav_bbox[1]
+            if cav_w > 2 and cav_h > 2:
+                cavity = np.zeros((cav_h, cav_w, 4), dtype=np.uint8)
+                Yc, Xc = np.ogrid[:cav_h, :cav_w]
+                d = np.sqrt(((Xc - cav_w // 2) / max(cav_w // 2, 1)) ** 2 +
+                            ((Yc - cav_h // 2) / max(cav_h // 2, 1)) ** 2)
+                d = np.clip(d, 0, 1)
+                mask = d <= 1.0
+                # Centre: very dark, Edge: slightly lighter reddish-brown
+                for c, (c0, c1) in enumerate([(15, 45), (5, 22), (5, 18)]):
+                    cavity[:, :, c] = np.where(mask, (c0 * (1 - d) + c1 * d).astype(np.uint8), 0)
+                cavity[:, :, 3] = np.where(mask, 255, 0).astype(np.uint8)
+                cavity_img = Image.fromarray(cavity, 'RGBA')
+                canvas.paste(cavity_img, (cav_bbox[0], cav_bbox[1]), cavity_img)
+
+            # 2. Upper teeth — soft rounded shape (only when open enough)
+            if open_ratio > 0.15 and half_open > lip_thick:
+                teeth_h = max(S * 2, int(half_open * 0.45))
+                teeth_w = int(eff_half_w * 1.1)
+                tb = [cx - teeth_w + lip_thick,
+                      cy - half_open + lip_thick // 2,
+                      cx + teeth_w - lip_thick,
+                      cy - half_open + lip_thick // 2 + teeth_h]
+                # Soft tooth colour with gradient (whiter at centre)
+                tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                if tw > 2 and th > 2:
+                    teeth = np.zeros((th, tw, 4), dtype=np.uint8)
+                    Yt, Xt = np.ogrid[:th, :tw]
+                    td = np.abs(Yt - th // 2) / max(th // 2, 1)
+                    td = np.clip(td, 0, 1)
+                    # Warm white → slightly grey at edges
+                    for c, (c0, c1) in enumerate([(248, 225), (244, 218), (236, 210)]):
+                        teeth[:, :, c] = (c0 * (1 - td) + c1 * td).astype(np.uint8)
+                    # Elliptical mask for teeth
+                    xd = np.abs(Xt - tw // 2) / max(tw // 2, 1)
+                    ell = np.sqrt(xd ** 2 + (td * 0.8) ** 2)
+                    teeth[:, :, 3] = np.where(ell <= 1.0, 230, 0).astype(np.uint8)
+                    # Very subtle tooth dividers (low opacity)
+                    seg_w = tw // 5
+                    for i in range(1, 5):
+                        tx = i * seg_w
+                        if 0 < tx < tw:
+                            teeth[:, tx, 3] = np.clip(teeth[:, tx, 3].astype(int) - 40, 0, 255).astype(np.uint8)
+                    teeth_img = Image.fromarray(teeth, 'RGBA')
+                    canvas.paste(teeth_img, (tb[0], tb[1]), teeth_img)
+
+            # 3. Lower teeth — thin sliver (only at wider openings)
+            if open_ratio > 0.40 and half_open > lip_thick * 2:
+                lo_h = max(S, int(half_open * 0.20))
+                lo_w = int(eff_half_w * 0.85)
+                lb = [cx - lo_w + lip_thick,
+                      cy + half_open - lip_thick // 2 - lo_h,
+                      cx + lo_w - lip_thick,
+                      cy + half_open - lip_thick // 2]
+                tw, th = lb[2] - lb[0], lb[3] - lb[1]
+                if tw > 2 and th > 1:
+                    lo_teeth = np.zeros((th, tw, 4), dtype=np.uint8)
+                    lo_teeth[:, :, 0] = 235
+                    lo_teeth[:, :, 1] = 232
+                    lo_teeth[:, :, 2] = 224
+                    # Elliptical mask
+                    Yl, Xl = np.ogrid[:th, :tw]
+                    xd = np.abs(Xl - tw // 2) / max(tw // 2, 1)
+                    yd = np.abs(Yl - th // 2) / max(th // 2, 1)
+                    ell = np.sqrt(xd ** 2 + yd ** 2)
+                    lo_teeth[:, :, 3] = np.where(ell <= 1.0, 180, 0).astype(np.uint8)
+                    lo_img = Image.fromarray(lo_teeth, 'RGBA')
+                    canvas.paste(lo_img, (lb[0], lb[1]), lo_img)
+
+            # 4. Upper lip arc
+            draw.arc(
+                [cx - eff_half_w, cy - half_open - lip_thick // 2,
+                 cx + eff_half_w, cy - half_open + lip_thick],
+                start=180, end=360,
+                fill=(*self.lip_color, 210), width=lip_thick,
+            )
+
+            # 5. Lower lip arc (slightly fuller)
+            lo_thick = int(lip_thick * 1.3)
+            draw.arc(
+                [cx - eff_half_w, cy + half_open - lip_thick,
+                 cx + eff_half_w, cy + half_open + lo_thick // 2],
+                start=0, end=180,
+                fill=(*self.lip_color, 210), width=lo_thick,
+            )
+
+            # 6. Corner accents — soft dots at mouth corners
+            corner_r = max(S, lip_thick // 2)
+            for corner_x in [cx - eff_half_w + corner_r, cx + eff_half_w - corner_r]:
+                draw.ellipse(
+                    [corner_x - corner_r, cy - corner_r,
+                     corner_x + corner_r, cy + corner_r],
+                    fill=(*lip_dark, 180),
+                )
+
+        # ── Downscale 2x → 1x (anti-alias) then apply feathered alpha ───
+        canvas = canvas.resize((self.sprite_w, self.sprite_h), Image.LANCZOS)
+
+        # Apply feathered elliptical alpha mask
+        feather_mask = self._feathered_mask(self.sprite_w, self.sprite_h, feather=5)
+        # Combine: keep whichever alpha is smaller (drawn content vs feather)
+        r, g, b, a = canvas.split()
+        import PIL.ImageChops as ImageChops
+        a = ImageChops.multiply(a, feather_mask)
+        canvas = Image.merge('RGBA', (r, g, b, a))
+
+        return canvas
+
+    # ── public API ────────────────────────────────────────────────────────
+
+    def get_sprite(self, amplitude: float):
+        """Return the pre-rendered sprite closest to this amplitude."""
+        idx = int(amplitude * (self.NUM_LEVELS - 1) + 0.5)
+        idx = max(0, min(idx, self.NUM_LEVELS - 1))
+        return self.sprites[idx]
+
+
 class AvatarGenerator:
     """
     Generates talking head videos from a still image and audio.
@@ -338,6 +588,11 @@ class AvatarGenerator:
             # Frozen base frame (numpy) — we copy & paint over each frame
             base_array = np.array(pil_image)
 
+            # ── Pre-render mouth sprite sheet ─────────────────────────────
+            sprite_sheet = MouthSpriteSheet(mouth_region, pil_image)
+            logger.info(f"Mouth sprite sheet: {sprite_sheet.NUM_LEVELS} levels, "
+                        f"sprite size {sprite_sheet.sprite_w}x{sprite_sheet.sprite_h}")
+
             # ── Frame generator ──────────────────────────────────────────────
             def make_frame(t):
                 # --- amplitude for this timestamp ---
@@ -348,10 +603,10 @@ class AvatarGenerator:
                 brightness = 1.0 + math.sin(t * 0.9) * 0.010 + math.cos(t * 1.7) * 0.005
                 frame_array = np.clip(base_array * brightness, 0, 255).astype(np.uint8)
 
-                # Draw animated mouth on top
+                # Composite pre-rendered mouth sprite
                 frame_img = Image.fromarray(frame_array)
-                draw = ImageDraw.Draw(frame_img)
-                self._draw_mouth_frame(draw, mouth_region, amplitude, t)
+                self._draw_mouth_frame(frame_img, mouth_region, amplitude, t,
+                                       sprite_sheet=sprite_sheet)
 
                 return np.array(frame_img)
 
@@ -527,11 +782,11 @@ class AvatarGenerator:
             pass
 
         # ── 3. Default avatar known proportions ───────────────────────────────
-        # Realistic avatar (1856 x 2304) has mouth centre at ~50% x, ~72% y.
+        # news_anchor.png (512 x 640): mouth centre ≈ 50 % x, 49 % y after resize.
         if avatar_image_path and Path(avatar_image_path).name == 'news_anchor.png':
             return {
                 'cx': img_w // 2,
-                'cy': int(img_h * 0.72),
+                'cy': int(img_h * 0.49),
                 'w': int(img_w * 0.15),
                 'h': int(img_h * 0.05),
                 'method': 'default_avatar_known',
@@ -547,118 +802,76 @@ class AvatarGenerator:
         }
 
     def _draw_mouth_frame(
-        self, draw, mouth_region: dict, amplitude: float, t: float
+        self, frame_img, mouth_region: dict, amplitude: float, t: float,
+        sprite_sheet: 'MouthSpriteSheet' = None,
     ) -> None:
         """
-        Paint an animated mouth onto a PIL ImageDraw at the given mouth_region.
+        Composite a pre-rendered mouth sprite onto the video frame.
+
+        Uses feathered alpha blending for seamless integration with the face.
+        Falls back to the legacy geometric drawing if no sprite_sheet is given.
 
         Parameters
         ----------
-        draw         : PIL.ImageDraw.Draw
-        mouth_region : {cx, cy, w, h}  — centre x/y, total width, max height
-        amplitude    : float [0, 1]    — current audio loudness
-        t            : float           — current video time (seconds), for jitter
+        frame_img    : PIL.Image.Image (RGB or RGBA)
+        mouth_region : {cx, cy, w, h}
+        amplitude    : float [0, 1]
+        t            : float — video time (seconds), for micro-jitter
+        sprite_sheet : MouthSpriteSheet (pre-rendered mouth sprites)
         """
         import math
+        from PIL import ImageFilter
 
-        cx = mouth_region['cx']
-        cy = mouth_region['cy']
-        mw = mouth_region['w']
-        mh = mouth_region['h']
-
-        # Natural micro-jitter (proportional to speech energy so silence is still)
+        # Natural micro-jitter (proportional to speech energy)
         jitter = (math.sin(t * 21.3) * 0.03 + math.cos(t * 13.7) * 0.02) * amplitude
         eff_amp = max(0.0, min(1.0, amplitude + jitter))
 
-        # Gamma curve: small movements for quiet audio, wide for loud speech
-        open_ratio = eff_amp ** 0.60
-        open_h = int(mh * open_ratio)
-        half_open = open_h // 2
-        half_w = mw // 2
+        # Gamma curve for natural movement
+        eff_amp = eff_amp ** 0.60
 
-        # Style parameters
-        lip_thick = max(2, mh // 5)
+        if sprite_sheet is None:
+            return  # no sprite sheet — skip (shouldn't happen)
 
-        # Colour palette
-        LIP_COLOR  = (185, 78, 78)    # pink-red lips
-        DARK_COLOR = (28, 8, 8)       # inner-mouth darkness
-        TEETH_TOP  = (248, 244, 236)  # upper teeth — warm white
-        TEETH_BOT  = (235, 232, 224)  # lower teeth — slightly darker
+        sprite = sprite_sheet.get_sprite(eff_amp)
 
-        if open_h < 3:
-            # ── CLOSED ──────────────────────────────────────────────────────
-            # Upper lip arch
-            draw.arc(
-                [cx - half_w, cy - lip_thick, cx + half_w, cy + lip_thick // 2],
-                start=195, end=345, fill=LIP_COLOR, width=lip_thick,
-            )
-            # Lower lip (slightly fuller)
-            draw.arc(
-                [cx - half_w + 4, cy - lip_thick // 2,
-                 cx + half_w - 4, cy + lip_thick + 2],
-                start=15, end=165, fill=LIP_COLOR, width=lip_thick,
-            )
-        else:
-            # ── OPEN ─────────────────────────────────────────────────────────
+        # Subtle jaw-drop offset: mouth moves down slightly when open
+        jaw_offset = int(eff_amp * 3)
 
-            # 1. Dark inner cavity
-            draw.ellipse(
-                [cx - half_w + lip_thick, cy - half_open,
-                 cx + half_w - lip_thick, cy + half_open],
-                fill=DARK_COLOR,
-            )
+        # Micro-asymmetry for realism
+        asymmetry = int(math.sin(t * 5.3) * 0.8 * eff_amp)
 
-            # 2. Upper teeth
-            upper_teeth_h = max(2, half_open - lip_thick)
-            if upper_teeth_h > 3:
-                tb = [
-                    cx - half_w + lip_thick + 2,
-                    cy - half_open + lip_thick // 2,
-                    cx + half_w - lip_thick - 2,
-                    cy - half_open + lip_thick // 2 + upper_teeth_h,
-                ]
-                draw.rectangle(tb, fill=TEETH_TOP)
-                # Tooth divider lines
-                tw = (tb[2] - tb[0]) // 4
-                for i in range(1, 4):
-                    tx = tb[0] + i * tw
-                    draw.line([(tx, tb[1]), (tx, tb[3])],
-                              fill=(215, 210, 200), width=1)
+        # Paste position (centre sprite on mouth region)
+        paste_x = mouth_region['cx'] - sprite.width // 2 + asymmetry
+        paste_y = mouth_region['cy'] - sprite.height // 2 + jaw_offset
 
-            # 3. Lower teeth (thin sliver)
-            if half_open > lip_thick * 2:
-                lower_h = max(2, min(half_open // 3, lip_thick))
-                lb = [
-                    cx - half_w + lip_thick + 4,
-                    cy + half_open - lip_thick // 2 - lower_h,
-                    cx + half_w - lip_thick - 4,
-                    cy + half_open - lip_thick // 2,
-                ]
-                draw.rectangle(lb, fill=TEETH_BOT)
+        # Composite sprite using its alpha channel directly onto the RGB frame.
+        # PIL Image.paste with an RGBA mask works on RGB images too.
+        frame_img.paste(sprite, (paste_x, paste_y), sprite)
 
-            # 4. Upper lip arc
-            draw.arc(
-                [cx - half_w, cy - half_open - lip_thick // 2,
-                 cx + half_w, cy - half_open + lip_thick],
-                start=180, end=360, fill=LIP_COLOR, width=lip_thick,
-            )
+        # Light blur on the seam region to smooth the blend
+        blur_pad = 4
+        blur_box = (
+            max(0, paste_x - blur_pad),
+            max(0, paste_y - blur_pad),
+            min(frame_img.width, paste_x + sprite.width + blur_pad),
+            min(frame_img.height, paste_y + sprite.height + blur_pad),
+        )
+        seam = frame_img.crop(blur_box)
+        seam_blurred = seam.filter(ImageFilter.GaussianBlur(radius=0.7))
 
-            # 5. Lower lip arc (slightly fuller)
-            lo_thick = int(lip_thick * 1.25)
-            draw.arc(
-                [cx - half_w, cy + half_open - lip_thick,
-                 cx + half_w, cy + half_open + lo_thick // 2],
-                start=0, end=180, fill=LIP_COLOR, width=lo_thick,
-            )
-
-            # 6. Corner accents
-            corner_r = max(2, lip_thick // 2)
-            for corner_x in [cx - half_w, cx + half_w]:
-                draw.ellipse(
-                    [corner_x - corner_r, cy - corner_r,
-                     corner_x + corner_r, cy + corner_r],
-                    fill=LIP_COLOR,
-                )
+        # Only apply blur to the outer ring (seam), keep centre sharp
+        from PIL import Image, ImageDraw as ID
+        seam_mask = Image.new('L', seam.size, 255)
+        sm_draw = ID.Draw(seam_mask)
+        inner_pad = blur_pad + 3
+        sm_draw.ellipse(
+            [inner_pad, inner_pad,
+             seam.width - inner_pad, seam.height - inner_pad],
+            fill=0,
+        )
+        seam_mask = seam_mask.filter(ImageFilter.GaussianBlur(radius=3))
+        final_seam = Image.composite(seam_blurred, seam, seam_mask)
+        frame_img.paste(final_seam, (blur_box[0], blur_box[1]))
 
     # ─────────────────────────────────────────────────────────────────────────
 
