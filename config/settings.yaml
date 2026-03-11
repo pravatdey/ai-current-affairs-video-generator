@@ -28,8 +28,8 @@ languages:
     - code: "en"
       name: "English"
       tts_voice: "en-IN-PrabhatNeural"   # Clear Indian English male news voice
-      tts_rate: "+0%"                    # Natural pace — most human-sounding
-      tts_pitch: "-2Hz"                  # Slightly deeper = more authoritative
+      tts_rate: "-8%"                    # Slower pace — calm, soothing delivery
+      tts_pitch: "-5Hz"                  # Deeper pitch = warmer, more pleasant tone
     - code: "hi"
       name: "Hindi"
       tts_voice: "hi-IN-MadhurNeural"
@@ -69,19 +69,19 @@ tts:
   provider: "edge"         # Options: "edge", "coqui"
   output_format: "mp3"
 
-  # Edge TTS settings
+  # Edge TTS settings (tuned for warm, soothing voice)
   edge:
-    rate: "+0%"
-    pitch: "+0Hz"
+    rate: "-8%"            # Slower = calmer, more pleasant
+    pitch: "-5Hz"          # Deeper = warmer tone
     volume: "+0%"
 
-  # Audio post-processing
+  # Audio post-processing (gentle — preserves natural warmth)
   audio:
     normalize: true
     noise_reduction: false
-    target_loudness: -14   # LUFS — louder, clearer on YouTube
-    clarity_boost: true    # High-pass filter to cut muddiness
-    compressor: true       # Compression for consistent volume
+    target_loudness: -16   # LUFS — slightly quieter, more comfortable
+    clarity_boost: true    # Soft high-pass to cut rumble only
+    compressor: true       # Light compression for consistency
 
 # Avatar Configuration
 avatar:

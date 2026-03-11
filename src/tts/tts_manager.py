@@ -30,7 +30,12 @@ class TTSManager:
             config_path: Path to settings configuration
         """
         self.config = self._load_config(config_path)
-        self.engine = EdgeTTSEngine()
+        tts_edge_config = self.config.get("tts", {}).get("edge", {})
+        self.engine = EdgeTTSEngine(
+            rate=tts_edge_config.get("rate", "-8%"),
+            pitch=tts_edge_config.get("pitch", "-5Hz"),
+            volume=tts_edge_config.get("volume", "+0%"),
+        )
 
         # Load language configurations
         self.languages = self._load_languages()

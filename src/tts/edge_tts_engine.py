@@ -72,8 +72,8 @@ class EdgeTTSEngine(BaseTTS):
     def __init__(
         self,
         default_voice: str = None,
-        rate: str = "+0%",
-        pitch: str = "+0Hz",
+        rate: str = "-8%",
+        pitch: str = "-5Hz",
         volume: str = "+0%"
     ):
         """
@@ -81,8 +81,8 @@ class EdgeTTSEngine(BaseTTS):
 
         Args:
             default_voice: Default voice ID
-            rate: Default speaking rate
-            pitch: Default pitch
+            rate: Default speaking rate (slower = more soothing)
+            pitch: Default pitch (lower = warmer tone)
             volume: Default volume
         """
         self.default_voice = default_voice or self.DEFAULT_VOICES["en"]
@@ -156,20 +156,25 @@ class EdgeTTSEngine(BaseTTS):
         for pattern, replacement in abbreviations.items():
             text = re.sub(pattern, replacement, text)
 
-        # ── 3. Add natural pauses ─────────────────────────────────────
-        # After a full stop that ends a sentence → extra pause (comma trick)
-        # Edge TTS respects commas as brief pauses
-        text = re.sub(r'\.\s+([A-Z])', r'. \1', text)   # ensure space after period
+        # ── 3. Add natural breathing pauses ─────────────────────────────
+        # Edge TTS respects commas and ellipses as pauses — use them for a
+        # calm, unhurried delivery that sounds soothing.
 
-        # Paragraph breaks → longer pause (period + newline → period + comma + newline)
-        text = re.sub(r'\n\n+', '. \n', text)
-        text = re.sub(r'\n', ' ', text)
+        # After a full stop → add a gentle pause before next sentence
+        text = re.sub(r'\.\s+([A-Z])', r'.\n\1', text)
 
-        # After colons in headers like "Key Points:" → pause
-        text = re.sub(r':\s+', ':  ', text)
+        # Paragraph breaks → longer pause (period + double newline)
+        text = re.sub(r'\n\n+', '.\n\n', text)
+        text = re.sub(r'\n', ' ... ', text)   # ellipsis = natural breathing pause
 
-        # Number sequences like "1. point  2. point" → natural pause between
-        text = re.sub(r'(\d+)\.\s+', r'\1. ', text)
+        # After colons in headers like "Key Points:" → calm pause
+        text = re.sub(r':\s+', ': ... ', text)
+
+        # Number sequences like "1. point  2. point" → pause between items
+        text = re.sub(r'(\d+)\.\s+', r'\1 ... ', text)
+
+        # After semicolons → gentle pause
+        text = re.sub(r';\s+', '; ... ', text)
 
         # ── 4. Break very long sentences at conjunctions ──────────────
         # Sentences over 200 chars → split at "and", "but", "which", "that"
@@ -198,41 +203,43 @@ class EdgeTTSEngine(BaseTTS):
 
     def _postprocess_audio(self, audio_path: str) -> None:
         """
-        Apply audio enhancement chain to the generated MP3:
-          1. High-pass filter at 100 Hz  → removes low-frequency muddiness
-          2. Gentle compression           → consistent volume, no sudden loud/quiet
-          3. Loudness normalisation       → target -14 LUFS for YouTube clarity
-          4. Slight presence boost (3kHz) → cuts through on phone speakers
+        Apply gentle audio enhancement for a warm, soothing voice:
+          1. Soft high-pass at 80 Hz     → removes rumble without thinning the voice
+          2. Gentle low-pass at 12 kHz   → rolls off harsh sibilance (s/t sounds)
+          3. Very light compression       → consistent volume, preserves natural dynamics
+          4. Loudness normalisation       → target -16 LUFS for comfortable listening
         All done with pydub; if any step fails it's silently skipped.
         """
         try:
             audio = AudioSegment.from_file(audio_path)
 
-            # 1. High-pass filter — remove bass rumble that makes voice muddy
-            audio = audio.high_pass_filter(100)
+            # 1. Soft high-pass filter — remove rumble but keep warmth (lower cutoff)
+            audio = audio.high_pass_filter(80)
 
-            # 2. Light compression — bring up quiet parts, tame loud parts
+            # 2. Gentle low-pass filter — tame harsh sibilance for soothing feel
+            audio = audio.low_pass_filter(12000)
+
+            # 3. Very light compression — preserve natural dynamics, just even out extremes
             try:
                 audio = compress_dynamic_range(
                     audio,
-                    threshold=-20.0,   # dB — start compressing here
-                    ratio=3.0,         # 3:1 ratio — gentle
-                    attack=5.0,        # ms
-                    release=50.0       # ms
+                    threshold=-18.0,   # dB — higher threshold = less compression
+                    ratio=2.0,         # 2:1 ratio — very gentle, natural sounding
+                    attack=10.0,       # ms — slower attack preserves transients
+                    release=100.0      # ms — slower release for smoother output
                 )
             except Exception:
                 pass  # compress_dynamic_range signature varies by pydub version
 
-            # 3. Normalise loudness to -14 LUFS equivalent
-            audio = normalize(audio, headroom=1.0)
+            # 4. Normalise loudness to -16 LUFS — slightly quieter = more comfortable/soothing
+            audio = normalize(audio, headroom=2.0)
 
-            # 4. Gentle overall volume boost after normalisation for extra clarity
-            audio = audio + 2   # +2 dB headroom boost — keeps voice upfront without harshness
+            # No additional volume boost — keeps the voice warm and non-fatiguing
 
             # Export back to same path
             audio.export(audio_path, format="mp3", bitrate="192k",
                          parameters=["-q:a", "0"])
-            logger.info(f"Audio post-processed: {audio_path}")
+            logger.info(f"Audio post-processed (warm mode): {audio_path}")
 
         except Exception as e:
             logger.warning(f"Audio post-processing skipped: {e}")
