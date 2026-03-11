@@ -9,6 +9,7 @@ Enhancements for natural, clear news-delivery voice:
 """
 
 import asyncio
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -286,8 +287,31 @@ class EdgeTTSEngine(BaseTTS):
                 volume=volume
             )
 
-            # Generate audio
-            await communicate.save(str(output_path))
+            # Stream audio + capture word boundaries for viseme lip-sync
+            word_boundaries = []
+            audio_data = b""
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_data += chunk["data"]
+                elif chunk["type"] == "WordBoundary":
+                    word_boundaries.append({
+                        "text": chunk["text"],
+                        "offset_us": chunk["offset"] / 10,      # 100ns → microseconds
+                        "duration_us": chunk["duration"] / 10,
+                    })
+
+            # Write audio file
+            with open(str(output_path), "wb") as f:
+                f.write(audio_data)
+
+            # Save word timing JSON for viseme-based lip-sync
+            word_timing_path = str(Path(output_path).with_suffix('.wordtiming.json'))
+            if word_boundaries:
+                with open(word_timing_path, 'w', encoding='utf-8') as f:
+                    json.dump(word_boundaries, f)
+                logger.info(f"Word timing saved: {len(word_boundaries)} words → {word_timing_path}")
+            else:
+                word_timing_path = None
 
             # Enhance audio clarity (normalise, compress, EQ)
             self._postprocess_audio(str(output_path))
@@ -315,7 +339,8 @@ class EdgeTTSEngine(BaseTTS):
                 duration=duration,
                 text=text,
                 voice=voice_info,
-                success=True
+                success=True,
+                word_timing_path=word_timing_path,
             )
 
         except Exception as e:
@@ -375,7 +400,10 @@ class EdgeTTSEngine(BaseTTS):
         temp_files = []
 
         try:
-            # Generate audio for each chunk
+            # Generate audio for each chunk, capturing word boundaries
+            all_word_boundaries = []
+            cumulative_offset_us = 0.0
+
             for i, chunk in enumerate(chunks):
                 temp_path = temp_dir / f"chunk_{i}.mp3"
                 temp_files.append(temp_path)
@@ -386,7 +414,25 @@ class EdgeTTSEngine(BaseTTS):
                     rate=rate,
                     pitch=pitch
                 )
-                await communicate.save(str(temp_path))
+
+                # Stream to capture word boundaries
+                chunk_audio = b""
+                async for evt in communicate.stream():
+                    if evt["type"] == "audio":
+                        chunk_audio += evt["data"]
+                    elif evt["type"] == "WordBoundary":
+                        all_word_boundaries.append({
+                            "text": evt["text"],
+                            "offset_us": evt["offset"] / 10 + cumulative_offset_us,
+                            "duration_us": evt["duration"] / 10,
+                        })
+
+                with open(str(temp_path), "wb") as f:
+                    f.write(chunk_audio)
+
+                # Get this chunk's duration to offset the next chunk's timestamps
+                chunk_dur = self._get_audio_duration(str(temp_path))
+                cumulative_offset_us += chunk_dur * 1_000_000  # seconds → microseconds
 
             # Get ffmpeg path
             try:
@@ -447,6 +493,15 @@ class EdgeTTSEngine(BaseTTS):
             except Exception:
                 pass  # Ignore cleanup errors on Windows
 
+            # Save accumulated word timing JSON for viseme lip-sync
+            word_timing_path = str(Path(output_path).with_suffix('.wordtiming.json'))
+            if all_word_boundaries:
+                with open(word_timing_path, 'w', encoding='utf-8') as f:
+                    json.dump(all_word_boundaries, f)
+                logger.info(f"Word timing saved: {len(all_word_boundaries)} words → {word_timing_path}")
+            else:
+                word_timing_path = None
+
             logger.info(f"Generated long audio: {duration:.1f}s")
 
             voice_info = TTSVoice(
@@ -463,7 +518,8 @@ class EdgeTTSEngine(BaseTTS):
                 duration=duration,
                 text=text,
                 voice=voice_info,
-                success=True
+                success=True,
+                word_timing_path=word_timing_path,
             )
 
         except Exception as e:

@@ -123,12 +123,12 @@ composition:
     show_terms_as_badges: true   # Pill badges instead of table for terms
     bullet_style: "numbered"     # "numbered" (circled 1,2,3) or "dots"
 
-  # Avatar position (left side, smaller to show slides)
+  # Avatar position — "left" auto-fills the left zone up to content_start_x_pct
   avatar:
-    position: "left"       # Options: "left", "center", "right"
-    scale: 0.55            # Smaller to not block presentation slides
-    x_offset: -50          # Push toward left edge
-    y_offset: 80           # Push down slightly
+    position: "left"       # "left" = auto-fill left zone, "center"/"right" = manual
+    scale: 0.55            # Only used for center/right positioning
+    x_offset: 0            # Only used for center/right positioning
+    y_offset: 0            # Only used for center/right positioning
 
   # Text overlays
   text:
