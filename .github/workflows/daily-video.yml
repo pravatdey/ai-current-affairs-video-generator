@@ -64,6 +64,8 @@ jobs:
 
       - name: Setup Wav2Lip ONNX
         run: |
+          pip install onnx onnxscript onnxruntime
+
           # Clone Wav2Lip and download ONNX model
           git clone https://github.com/Rudrabha/Wav2Lip.git tools/Wav2Lip
           mkdir -p tools/Wav2Lip/checkpoints
