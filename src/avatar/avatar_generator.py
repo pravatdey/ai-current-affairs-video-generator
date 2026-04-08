@@ -33,23 +33,24 @@ class AvatarResult:
 class VisemeSpriteSheet:
     """
     Creates mouth-shape sprites by warping the ACTUAL avatar face pixels
-    using cv2.remap displacement fields.  Each of 8 viseme positions is
-    combined with 4 amplitude levels → 32 pre-rendered RGBA sprites that
+    using cv2.remap displacement fields.  Each of 9 viseme positions is
+    combined with 6 amplitude levels → 54 pre-rendered RGBA sprites that
     blend seamlessly onto the face via feathered alpha.
 
-    Viseme IDs:
-      0 CLOSED  — lips together, neutral
-      1 AH      — mouth open, jaw drops  (a, e, i)
-      2 OH      — lips rounded            (o, u)
-      3 EE      — wide smile shape        (ee, y)
-      4 FV      — lower lip tucked        (f, v)
-      5 BMP     — lips pressed            (b, m, p)
-      6 LDN     — small opening           (l, d, t, n, r, s)
-      7 WQ      — lips pursed / forward   (w, ch, j, sh, k, g)
+    Enhanced viseme set aligned with Rhubarb Lip Sync (Preston Blair):
+      0 CLOSED     — silence / rest (lips together, neutral)
+      1 MBP        — lips pressed firmly (b, m, p)
+      2 SMALL_OPEN — generic small opening (most consonants)
+      3 EH         — mid-open, relaxed jaw (e as in "bed")
+      4 AH         — wide open mouth, jaw drops (a as in "father")
+      5 OH         — rounded lips, medium open (o as in "go")
+      6 OO         — tight round lips (oo as in "food")
+      7 FV         — lower lip tucked (f, v)
+      8 L_TH       — tongue visible (l, th)
     """
 
-    NUM_VISEMES = 8
-    AMP_LEVELS = 4  # amplitude sub-levels per viseme
+    NUM_VISEMES = 9
+    AMP_LEVELS = 6  # more amplitude sub-levels for smoother animation
 
     def __init__(self, mouth_region: dict, face_image):
         import cv2
@@ -129,8 +130,8 @@ class VisemeSpriteSheet:
         Warp the mouth crop for a specific viseme + amplitude using
         cv2.remap with a displacement field.
 
-        The displacement is strongest at the mouth centre and fades
-        smoothly via a gaussian mask, so surrounding skin stays natural.
+        Enhanced 9-viseme system with realistic displacement parameters
+        tuned for natural human mouth shapes.
         """
         h, w = self.base_np.shape[:2]
         mcx, mcy = float(self.rel_cx), float(self.rel_cy)
@@ -146,76 +147,104 @@ class VisemeSpriteSheet:
         dy = (map_y - mcy) / max(h / 2, 1)
 
         # Gaussian influence: strongest at mouth, fading out
-        influence = np.exp(-(dx ** 2 + dy ** 2) * 2.5)
+        influence = np.exp(-(dx ** 2 + dy ** 2) * 2.0)
 
-        # Mouth half-mask: below mouth centre
-        below = np.clip((map_y - mcy) / max(h * 0.15, 1), 0, 1)
-        above = np.clip((mcy - map_y) / max(h * 0.15, 1), 0, 1)
+        # Separate upper/lower lip influence masks
+        below = np.clip((map_y - mcy) / max(h * 0.12, 1), 0, 1)
+        above = np.clip((mcy - map_y) / max(h * 0.12, 1), 0, 1)
+        # Lip-proximity mask (strongest very close to mouth center)
+        lip_zone = np.exp(-((map_y - mcy) / max(h * 0.08, 1)) ** 2)
 
-        # Scale factor based on amplitude (0 → no warp, 1 → max)
         amp = amplitude
 
         # ── Apply viseme-specific displacements ────────────────────────
         if viseme_id == 0:
-            # CLOSED — no change
+            # CLOSED — no change (neutral rest)
             pass
 
         elif viseme_id == 1:
-            # AH — jaw drops, mouth opens wide vertically
-            jaw_drop = amp * 10.0
-            map_y = map_y - below * influence * jaw_drop
-            # Slight horizontal widening
-            h_widen = amp * 3.0
-            map_x = map_x - dx * influence * h_widen * 0.3
+            # MBP — lips press together firmly
+            press = amp * 5.0
+            map_y = map_y + dy * lip_zone * press * 0.6
+            # Slight horizontal widening from compression
+            map_x = map_x - dx * lip_zone * amp * 1.5
 
         elif viseme_id == 2:
-            # OH — lips round: horizontal compress + vertical stretch
-            h_compress = amp * 5.0
-            v_stretch = amp * 7.0
-            map_x = map_x + dx * influence * h_compress
-            map_y = map_y - below * influence * v_stretch
+            # SMALL_OPEN — small generic mouth opening
+            jaw_drop = amp * 6.0
+            map_y = map_y - below * influence * jaw_drop
+            # Upper lip barely moves
+            map_y = map_y + above * influence * amp * 1.0
 
         elif viseme_id == 3:
-            # EE — wide smile: horizontal stretch + slight vertical compress
-            h_stretch = amp * 6.0
-            v_compress = amp * 2.0
-            map_x = map_x - dx * influence * h_stretch
-            map_y = map_y + below * influence * v_compress * 0.5
+            # EH — mid-open, relaxed jaw (e in "bed")
+            jaw_drop = amp * 8.0
+            map_y = map_y - below * influence * jaw_drop
+            # Moderate horizontal widening (relaxed mouth)
+            h_widen = amp * 4.0
+            map_x = map_x - dx * influence * h_widen * 0.3
+            # Upper lip lifts slightly
+            map_y = map_y + above * influence * amp * 1.5
 
         elif viseme_id == 4:
-            # FV — lower lip tucks up toward upper teeth
-            lip_tuck = amp * 5.0
-            map_y = map_y + below * influence * lip_tuck * 0.6
-            # Slight narrowing
-            map_x = map_x + dx * influence * amp * 2.0
+            # AH — wide open mouth, jaw drops significantly
+            jaw_drop = amp * 12.0
+            map_y = map_y - below * influence * jaw_drop
+            # Horizontal widening
+            h_widen = amp * 5.0
+            map_x = map_x - dx * influence * h_widen * 0.35
+            # Upper lip lifts
+            map_y = map_y + above * influence * amp * 2.0
+            # Cheeks pull back slightly
+            cheek_pull = amp * 2.0
+            map_x = map_x - dx * influence * cheek_pull * 0.15
 
         elif viseme_id == 5:
-            # BMP — lips press together (vertical compression at mouth)
-            press = amp * 4.0
-            map_y = map_y + dy * influence * press * 0.5
+            # OH — rounded lips, medium open
+            h_compress = amp * 6.0
+            v_stretch = amp * 8.0
+            map_x = map_x + dx * influence * h_compress
+            map_y = map_y - below * influence * v_stretch
+            # Upper lip pushes down slightly (rounding)
+            map_y = map_y - above * lip_zone * amp * 2.0
 
         elif viseme_id == 6:
-            # LDN — small opening, slight jaw drop
-            jaw_drop = amp * 5.0
-            map_y = map_y - below * influence * jaw_drop
-
-        elif viseme_id == 7:
-            # WQ — lips purse forward: horizontal compress (rounded)
-            h_compress = amp * 6.0
-            v_slight = amp * 3.0
+            # OO — tight round lips, small opening
+            h_compress = amp * 8.0
+            v_slight = amp * 4.0
             map_x = map_x + dx * influence * h_compress
             map_y = map_y - below * influence * v_slight * 0.5
+            # Lips pucker forward (simulate with tighter compression)
+            map_x = map_x + dx * lip_zone * amp * 3.0
 
-        # Remap
+        elif viseme_id == 7:
+            # FV — lower lip tucks up toward upper teeth
+            lip_tuck = amp * 6.0
+            map_y = map_y + below * lip_zone * lip_tuck * 0.7
+            # Slight narrowing
+            map_x = map_x + dx * influence * amp * 2.0
+            # Upper lip stays mostly still
+            map_y = map_y + above * lip_zone * amp * 0.5
+
+        elif viseme_id == 8:
+            # L_TH — tongue visible, slight opening
+            jaw_drop = amp * 5.0
+            map_y = map_y - below * influence * jaw_drop
+            # Wider opening for tongue visibility
+            h_widen = amp * 3.0
+            map_x = map_x - dx * influence * h_widen * 0.25
+
+        # Remap with cubic interpolation for smoother results
         warped = cv2.remap(
             self.base_np, map_x, map_y,
-            cv2.INTER_LINEAR,
+            cv2.INTER_CUBIC,
             borderMode=cv2.BORDER_REFLECT_101,
         )
 
-        # Paint dark cavity for open-mouth visemes
-        if viseme_id in (1, 2, 3, 6, 7) and amp > 0.15:
-            self._paint_cavity(warped, np, viseme_id, amp)
+        # Paint mouth interior for open-mouth visemes
+        open_visemes = {2, 3, 4, 5, 6, 8}  # visemes with visible mouth interior
+        if viseme_id in open_visemes and amp > 0.10:
+            self._paint_mouth_interior(warped, np, viseme_id, amp)
 
         # Convert to RGBA PIL with feathered alpha
         rgba = np.zeros((h, w, 4), dtype=np.uint8)
@@ -223,30 +252,87 @@ class VisemeSpriteSheet:
         rgba[:, :, 3] = np.array(self._alpha_mask)
         return Image.fromarray(rgba, 'RGBA')
 
-    def _paint_cavity(self, img_np, np, viseme_id, amplitude):
-        """Paint a subtle dark ellipse at the mouth centre to simulate cavity."""
+    def _paint_mouth_interior(self, img_np, np, viseme_id, amplitude):
+        """
+        Paint realistic mouth interior: dark cavity + teeth hint + tongue hint.
+
+        For open-mouth visemes, renders:
+        1. Dark mouth cavity (base)
+        2. Upper teeth row (white strip at top of opening)
+        3. Tongue hint for L_TH viseme
+        """
         h, w = img_np.shape[:2]
         mcx, mcy = self.rel_cx, self.rel_cy
         mw = self.region['w']
+        mh = self.region['h']
 
-        # Cavity dimensions depend on viseme shape
-        if viseme_id in (1,):  # AH — wide horizontal
-            cw = int(mw * 0.5 * amplitude)
-            ch = int(mw * 0.35 * amplitude)
-        elif viseme_id in (2, 7):  # OH, WQ — narrow rounded
-            cw = int(mw * 0.3 * amplitude)
-            ch = int(mw * 0.35 * amplitude)
-        elif viseme_id == 3:  # EE — wide thin
-            cw = int(mw * 0.5 * amplitude)
-            ch = int(mw * 0.15 * amplitude)
-        else:  # LDN etc — small
-            cw = int(mw * 0.3 * amplitude)
-            ch = int(mw * 0.2 * amplitude)
+        # ── Cavity dimensions per viseme ──────────────────────────────
+        cavity_params = {
+            2: (0.35, 0.20),   # SMALL_OPEN — small
+            3: (0.45, 0.30),   # EH — mid-open
+            4: (0.55, 0.40),   # AH — wide open
+            5: (0.30, 0.35),   # OH — rounded
+            6: (0.22, 0.22),   # OO — tight round
+            8: (0.40, 0.28),   # L_TH — medium for tongue
+        }
+        w_ratio, h_ratio = cavity_params.get(viseme_id, (0.30, 0.20))
+        cw = int(mw * w_ratio * amplitude)
+        ch = int(mh * h_ratio * amplitude + mw * h_ratio * amplitude * 0.5)
 
-        if cw < 2 or ch < 2:
+        if cw < 3 or ch < 3:
             return
 
-        # Create cavity elliptical mask
+        # Cavity center (slightly below mouth center for jaw drop)
+        cavity_cy = mcy + int(ch * 0.2 * amplitude)
+
+        # ── 1. Dark mouth cavity ──────────────────────────────────────
+        Y, X = np.ogrid[:h, :w]
+        ell = ((X - mcx) / max(cw, 1)) ** 2 + ((Y - cavity_cy) / max(ch, 1)) ** 2
+        cavity_mask = np.clip(1.0 - ell, 0, 1)
+        cavity_mask = cavity_mask ** 1.3  # slightly sharper edges
+
+        cavity_color = self._cavity_color.reshape(1, 1, 3).astype(np.float32)
+        blended = img_np.astype(np.float32) * (1 - cavity_mask[:, :, None]) + \
+                  cavity_color * cavity_mask[:, :, None]
+
+        # ── 2. Upper teeth row ────────────────────────────────────────
+        teeth_h = max(2, int(ch * 0.22))
+        teeth_w = int(cw * 0.80)
+        teeth_cy = cavity_cy - int(ch * 0.35)  # top of mouth opening
+        teeth_mask = np.zeros((h, w), dtype=np.float32)
+        teeth_ell = ((X - mcx) / max(teeth_w, 1)) ** 2 + \
+                    ((Y - teeth_cy) / max(teeth_h, 1)) ** 2
+        teeth_mask = np.clip(1.0 - teeth_ell * 2.0, 0, 1) * cavity_mask
+        teeth_mask = teeth_mask ** 2.0  # sharper
+
+        # Teeth color: off-white
+        teeth_color = np.array([235, 232, 225], dtype=np.float32).reshape(1, 1, 3)
+        teeth_strength = min(amplitude * 1.2, 0.85)
+        blended = blended * (1 - teeth_mask[:, :, None] * teeth_strength) + \
+                  teeth_color * teeth_mask[:, :, None] * teeth_strength
+
+        # ── 3. Tongue hint (for L_TH and AH visemes) ─────────────────
+        if viseme_id in (8, 4) and amplitude > 0.3:
+            tongue_w = int(cw * 0.50)
+            tongue_h = max(2, int(ch * 0.25))
+            tongue_cy = cavity_cy + int(ch * 0.20)  # lower part of cavity
+            tongue_ell = ((X - mcx) / max(tongue_w, 1)) ** 2 + \
+                         ((Y - tongue_cy) / max(tongue_h, 1)) ** 2
+            tongue_mask = np.clip(1.0 - tongue_ell * 1.5, 0, 1) * cavity_mask
+            tongue_mask = tongue_mask ** 1.5
+
+            # Tongue color: pinkish-red
+            tongue_color = np.array([180, 100, 90], dtype=np.float32).reshape(1, 1, 3)
+            tongue_strength = min(amplitude * 0.8, 0.6)
+            blended = blended * (1 - tongue_mask[:, :, None] * tongue_strength) + \
+                      tongue_color * tongue_mask[:, :, None] * tongue_strength
+
+        img_np[:] = np.clip(blended, 0, 255).astype(np.uint8)
+
+    # Kept for backward compat — redirects to new method
+    def _paint_cavity(self, img_np, np, viseme_id, amplitude):
+        """Legacy cavity painting — redirects to enhanced mouth interior."""
+        self._paint_mouth_interior(img_np, np, viseme_id, amplitude)
         Y, X = np.ogrid[:h, :w]
         ell = ((X - mcx) / max(cw, 1)) ** 2 + ((Y - mcy) / max(ch, 1)) ** 2
         mask = np.clip(1.0 - ell, 0, 1)
@@ -477,43 +563,29 @@ class AvatarGenerator:
         output_path: str,
         avatar_image: str
     ) -> AvatarResult:
-        """Generate video using Wav2Lip"""
+        """Generate video using Wav2Lip ONNX (CPU-optimized)"""
         try:
-            # First, create a static video from image
-            temp_video = Path(output_path).parent / "temp_static.mp4"
+            from src.avatar.wav2lip_onnx import wav2lip_onnx_inference
 
-            # Get audio duration
-            audio_duration = self._get_audio_duration(audio_path)
+            abs_audio = str(Path(audio_path).resolve())
+            abs_output = str(Path(output_path).resolve())
+            abs_avatar = str(Path(avatar_image).resolve())
 
-            # Create static video
-            self._create_static_video(avatar_image, str(temp_video), audio_duration)
+            # Find ONNX model
+            onnx_model = str(Path(self.wav2lip_path) / "checkpoints" / "wav2lip_gan.onnx")
+            if not Path(onnx_model).exists():
+                raise FileNotFoundError(f"Wav2Lip ONNX model not found: {onnx_model}")
 
-            # Wav2Lip command
-            cmd = [
-                "python",
-                str(Path(self.wav2lip_path) / "inference.py"),
-                "--checkpoint_path", str(Path(self.wav2lip_path) / "checkpoints/wav2lip_gan.pth"),
-                "--face", str(temp_video),
-                "--audio", audio_path,
-                "--outfile", output_path,
-                "--resize_factor", "1",
-                "--nosmooth"
-            ]
+            logger.info(f"Running Wav2Lip ONNX inference (CPU-optimized)")
 
-            logger.info(f"Running Wav2Lip: {' '.join(cmd)}")
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=self.wav2lip_path
+            wav2lip_onnx_inference(
+                face_image_path=abs_avatar,
+                audio_path=abs_audio,
+                output_path=abs_output,
+                onnx_model_path=onnx_model,
+                fps=30,
+                batch_size=8
             )
-
-            # Cleanup temp file
-            temp_video.unlink(missing_ok=True)
-
-            if result.returncode != 0:
-                raise Exception(f"Wav2Lip failed: {result.stderr}")
 
             duration = self._get_video_duration(output_path)
 
@@ -521,11 +593,11 @@ class AvatarGenerator:
                 success=True,
                 video_path=output_path,
                 duration=duration,
-                method="wav2lip"
+                method="wav2lip_onnx"
             )
 
         except Exception as e:
-            logger.error(f"Wav2Lip generation failed: {e}")
+            logger.error(f"Wav2Lip ONNX generation failed: {e}")
             # Fallback to simple method
             return self._generate_simple(audio_path, output_path, avatar_image)
 
@@ -536,11 +608,15 @@ class AvatarGenerator:
         avatar_image: str
     ) -> AvatarResult:
         """
-        Generate lip-sync animated avatar video with viseme-based mouth shapes.
+        Generate lip-sync animated avatar video with enhanced viseme system.
 
-        Uses phoneme-aware viseme mapping (from word-timing data) combined
-        with audio amplitude to produce natural lip movement.
-        Falls back to amplitude-only if word timing is unavailable.
+        Phoneme source priority:
+          1. Rhubarb Lip Sync (professional phoneme detection, CPU-only)
+          2. Edge TTS word timing + rule-based viseme mapper
+          3. Amplitude-only fallback
+
+        Features smooth easing between viseme transitions and
+        micro-amplitude modulation for natural movement.
         """
         try:
             from moviepy.video.VideoClip import VideoClip
@@ -550,7 +626,7 @@ class AvatarGenerator:
             import json
             import math
 
-            logger.info("Generating viseme lip-sync avatar video")
+            logger.info("Generating enhanced lip-sync avatar video")
 
             # ── Audio ────────────────────────────────────────────────────────
             audio = AudioFileClip(audio_path)
@@ -561,22 +637,51 @@ class AvatarGenerator:
             amplitudes = self._extract_audio_amplitude(audio_path, fps, duration)
             logger.info(f"Lip-sync: extracted {len(amplitudes)} amplitude frames")
 
-            # ── Viseme timeline (phoneme-aware) ──────────────────────────────
+            # ── Viseme timeline — try Rhubarb first, then Edge TTS ───────────
             viseme_timeline = None
-            word_timing_path = str(Path(audio_path).with_suffix('.wordtiming.json'))
-            if Path(word_timing_path).exists():
-                try:
-                    from src.avatar.viseme_mapper import generate_viseme_timeline
-                    with open(word_timing_path, 'r', encoding='utf-8') as f:
-                        word_boundaries = json.load(f)
-                    viseme_timeline = generate_viseme_timeline(
-                        word_boundaries, fps, duration
+            timeline_source = "none"
+
+            # Priority 1: Rhubarb Lip Sync (most accurate)
+            try:
+                from src.avatar.rhubarb_lipsync import (
+                    is_rhubarb_available, run_rhubarb, rhubarb_to_viseme_timeline,
+                )
+                if is_rhubarb_available():
+                    # Try to get dialog text for better accuracy
+                    dialog_text = None
+                    script_path = str(Path(audio_path).with_suffix('.txt'))
+                    if Path(script_path).exists():
+                        with open(script_path, 'r', encoding='utf-8') as f:
+                            dialog_text = f.read()
+
+                    mouth_cues = run_rhubarb(audio_path, dialog_text=dialog_text)
+                    viseme_timeline = rhubarb_to_viseme_timeline(
+                        mouth_cues, fps, duration
                     )
-                    logger.info(f"Viseme timeline loaded: {len(viseme_timeline)} frames")
-                except Exception as e:
-                    logger.warning(f"Viseme mapping failed, using amplitude-only: {e}")
-            else:
-                logger.info("No word timing file — using amplitude-only lip-sync")
+                    timeline_source = "rhubarb"
+                    logger.info(f"Rhubarb viseme timeline: {len(viseme_timeline)} frames")
+            except Exception as e:
+                logger.warning(f"Rhubarb failed, trying Edge TTS fallback: {e}")
+
+            # Priority 2: Edge TTS word timing
+            if viseme_timeline is None:
+                word_timing_path = str(Path(audio_path).with_suffix('.wordtiming.json'))
+                if Path(word_timing_path).exists():
+                    try:
+                        from src.avatar.viseme_mapper import generate_viseme_timeline
+                        with open(word_timing_path, 'r', encoding='utf-8') as f:
+                            word_boundaries = json.load(f)
+                        viseme_timeline = generate_viseme_timeline(
+                            word_boundaries, fps, duration
+                        )
+                        timeline_source = "edge_tts"
+                        logger.info(f"Edge TTS viseme timeline: {len(viseme_timeline)} frames")
+                    except Exception as e:
+                        logger.warning(f"Edge TTS viseme mapping failed: {e}")
+
+            if viseme_timeline is None:
+                logger.info("No phoneme data — using amplitude-only lip-sync")
+                timeline_source = "amplitude"
 
             # ── Avatar image ─────────────────────────────────────────────────
             pil_image = Image.open(avatar_image).convert('RGB')
@@ -609,13 +714,26 @@ class AvatarGenerator:
             # Paste position for viseme sprites
             paste_pos = sprite_sheet.get_paste_position() if use_viseme else None
 
+            # ── Smooth easing state for transitions ──────────────────────────
+            # Pre-compute eased viseme + amplitude arrays for smooth blending
+            TRANSITION_FRAMES = 3  # frames to blend between viseme changes
+            prev_sprite_cache = [None]  # mutable closure for blending state
+            blend_progress = [0.0]
+            last_viseme = [-1]
+
+            def _ease_cubic(t):
+                """Cubic ease-in-out for smooth transitions."""
+                if t < 0.5:
+                    return 4 * t * t * t
+                return 1 - (-2 * t + 2) ** 3 / 2
+
             # ── Frame generator ──────────────────────────────────────────────
             def make_frame(t):
                 frame_idx = min(int(t * fps), len(amplitudes) - 1)
                 amplitude = float(amplitudes[frame_idx])
 
                 # Subtle breathing brightness variation
-                brightness = 1.0 + math.sin(t * 0.9) * 0.010 + math.cos(t * 1.7) * 0.005
+                brightness = 1.0 + math.sin(t * 0.9) * 0.008 + math.cos(t * 1.7) * 0.004
                 frame_array = np.clip(base_array * brightness, 0, 255).astype(np.uint8)
 
                 if not use_viseme:
@@ -627,22 +745,45 @@ class AvatarGenerator:
                 if viseme_timeline is not None and frame_idx < len(viseme_timeline):
                     viseme_id = int(viseme_timeline[frame_idx])
                 else:
-                    # Amplitude-only fallback: map amplitude to AH(1) vs CLOSED(0)
-                    viseme_id = 1 if amplitude > 0.15 else 0
+                    # Amplitude-only fallback
+                    if amplitude > 0.4:
+                        viseme_id = 4   # AH — wide open
+                    elif amplitude > 0.25:
+                        viseme_id = 3   # EH — mid open
+                    elif amplitude > 0.12:
+                        viseme_id = 2   # SMALL_OPEN
+                    else:
+                        viseme_id = 0   # CLOSED
 
-                # Natural micro-jitter on amplitude
-                jitter = (math.sin(t * 21.3) * 0.03 + math.cos(t * 13.7) * 0.02) * amplitude
+                # Natural micro-jitter on amplitude for organic feel
+                jitter = (math.sin(t * 23.7) * 0.025
+                          + math.cos(t * 15.3) * 0.015
+                          + math.sin(t * 8.1) * 0.01) * amplitude
                 eff_amp = max(0.0, min(1.0, amplitude + jitter))
 
-                # Get the warped sprite
+                # Get the warped sprite for current viseme
                 sprite = sprite_sheet.get_sprite(viseme_id, eff_amp)
 
-                # Transition blending: blend with previous viseme for smoothness
-                if frame_idx > 0 and viseme_timeline is not None:
-                    prev_viseme = int(viseme_timeline[max(0, frame_idx - 1)])
-                    if prev_viseme != viseme_id:
-                        prev_sprite = sprite_sheet.get_sprite(prev_viseme, eff_amp)
-                        sprite = Image.blend(prev_sprite, sprite, 0.7)
+                # ── Smooth easing between viseme transitions ─────────
+                if last_viseme[0] != viseme_id and last_viseme[0] >= 0:
+                    # Viseme changed — start blending from previous
+                    prev_sprite_cache[0] = sprite_sheet.get_sprite(
+                        last_viseme[0], eff_amp
+                    )
+                    blend_progress[0] = 0.0
+
+                if prev_sprite_cache[0] is not None and blend_progress[0] < 1.0:
+                    # Smooth cubic ease from previous viseme to current
+                    blend_progress[0] += 1.0 / TRANSITION_FRAMES
+                    blend_progress[0] = min(1.0, blend_progress[0])
+                    t_ease = _ease_cubic(blend_progress[0])
+                    sprite = Image.blend(
+                        prev_sprite_cache[0], sprite, t_ease
+                    )
+                    if blend_progress[0] >= 1.0:
+                        prev_sprite_cache[0] = None
+
+                last_viseme[0] = viseme_id
 
                 # Composite onto frame
                 frame_img.paste(sprite, paste_pos, sprite)
@@ -668,7 +809,7 @@ class AvatarGenerator:
             audio.close()
             video_clip.close()
 
-            method = "viseme_lip_sync" if viseme_timeline is not None else "amplitude_lip_sync"
+            method = f"viseme_lip_sync_{timeline_source}"
             logger.info(f"Avatar video generated ({method}): {duration:.1f}s")
             return AvatarResult(
                 success=True,

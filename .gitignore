@@ -1,3 +1,8 @@
+# Tools (large binaries and models)
+tools/rhubarb-lip-sync/
+tools/Wav2Lip/
+tools/wav2lip-onnx-256/
+
 # Environment and secrets
 .env
 .env.local

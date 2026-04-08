@@ -60,11 +60,53 @@ jobs:
       - name: Create necessary directories
         run: |
           mkdir -p output/audio output/videos output/thumbnails
-          mkdir -p data logs config
+          mkdir -p data logs config tools
+
+      - name: Setup Wav2Lip ONNX
+        run: |
+          # Clone Wav2Lip and download ONNX model
+          git clone https://github.com/Rudrabha/Wav2Lip.git tools/Wav2Lip
+          mkdir -p tools/Wav2Lip/checkpoints
+
+          # Download Wav2Lip GAN model and convert to ONNX
+          curl -L -o tools/Wav2Lip/checkpoints/wav2lip_gan.pth \
+            "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth"
+
+          # Fix librosa compatibility in Wav2Lip
+          sed -i 's/librosa.filters.mel(hp.sample_rate, hp.n_fft/librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft/' tools/Wav2Lip/audio.py
+
+          # Convert to ONNX for fast CPU inference
+          cd tools/Wav2Lip && python -W ignore -c "
+          import torch, sys, os, io
+          sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+          sys.path.insert(0, '.')
+          from models import Wav2Lip
+          model = Wav2Lip()
+          ckpt = torch.load('checkpoints/wav2lip_gan.pth', map_location='cpu', weights_only=False)
+          new_s = {k.replace('module.', ''): v for k, v in ckpt['state_dict'].items()}
+          model.load_state_dict(new_s)
+          model.eval()
+          x, y = torch.randn(1,1,80,16), torch.randn(1,6,96,96)
+          torch.onnx.export(model, (x,y), 'checkpoints/wav2lip_gan.onnx',
+              input_names=['mel_spectrogram','video_frames'],
+              output_names=['predicted_frames'], opset_version=18, dynamo=False,
+              dynamic_axes={'mel_spectrogram':{0:'batch'},'video_frames':{0:'batch'},'predicted_frames':{0:'batch'}})
+          print(f'ONNX exported: {os.path.getsize(\"checkpoints/wav2lip_gan.onnx\")//1024//1024}MB')
+          "
+
+      - name: Setup Rhubarb Lip Sync
+        run: |
+          mkdir -p tools/rhubarb-lip-sync
+          # Download Rhubarb for Linux
+          curl -L -o /tmp/rhubarb.zip \
+            "https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v1.13.0/Rhubarb-Lip-Sync-1.13.0-Linux.zip"
+          unzip -o /tmp/rhubarb.zip -d tools/rhubarb-lip-sync/
+          chmod +x tools/rhubarb-lip-sync/Rhubarb-Lip-Sync-1.13.0-Linux/rhubarb
 
       - name: Setup environment file
         run: |
           echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" > .env
+          echo "WAV2LIP_PATH=$(pwd)/tools/Wav2Lip" >> .env
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
           echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> .env
 

@@ -233,11 +233,10 @@ class ScriptWriter:
         script.prelims_topics = prelims_topics
         script.mains_topics = mains_topics
 
-        # Calculate words per news item (adjusted for 15-min video)
-        # For 15 min video with 4 articles, each topic gets ~300-350 words
-        min_words_per_item = 280  # Adjusted for 15-minute video
-        max_words_per_item = 350  # Hard cap per article
-        words_per_item = min(max(int(self.news_words / len(articles)), min_words_per_item), max_words_per_item)
+        # Calculate words per news item based on target duration
+        # Distribute available news words evenly across articles
+        words_per_item = max(80, int(self.news_words / len(articles)))
+        max_words_per_item = min(350, words_per_item + 20)  # Small buffer only
 
         # Track cumulative time for timestamps
         cumulative_time = 0.0
@@ -298,6 +297,21 @@ class ScriptWriter:
         script.word_count = sum(
             len(seg.content.split()) for seg in script.segments
         )
+
+        # Hard-cap: truncate segments if total exceeds target
+        if script.word_count > self.target_words * 1.15:
+            logger.warning(
+                f"Script too long ({script.word_count} words vs {self.target_words} target), truncating..."
+            )
+            for seg in script.segments:
+                if seg.type == "news":
+                    words = seg.content.split()
+                    if len(words) > words_per_item:
+                        seg.content = ' '.join(words[:words_per_item])
+            script.word_count = sum(
+                len(seg.content.split()) for seg in script.segments
+            )
+
         script.total_duration = script.word_count / self.WORDS_PER_MINUTE * 60
 
         logger.info(

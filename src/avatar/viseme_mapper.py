@@ -2,15 +2,18 @@
 Viseme Mapper — converts word-timing data from edge_tts into a per-frame
 viseme timeline that drives phoneme-aware lip-sync animation.
 
-8 viseme groups based on standard phoneme-to-viseme mapping:
-  0  CLOSED  — silence / pause (lips together, neutral)
-  1  AH      — a, e, i  (mouth open, jaw drops)
-  2  OH      — o, u     (lips rounded)
-  3  EE      — ee, y    (wide smile shape)
-  4  FV      — f, v     (lower lip tucked under upper teeth)
-  5  BMP     — b, m, p  (lips pressed together)
-  6  LDN     — l, d, t, n, r, s, z  (tongue up, small opening)
-  7  WQ      — w, ch, j, sh, k, g   (lips pursed / teeth together)
+Enhanced 9-viseme system aligned with Rhubarb Lip Sync's Preston Blair
+phoneme set for consistency across both phoneme sources:
+
+  0  CLOSED   — silence / pause (lips together, neutral rest)
+  1  MBP      — b, m, p (lips pressed together firmly)
+  2  SMALL_OPEN — generic small opening (most consonants when quiet)
+  3  EH       — e as in "bed" (mid-open, relaxed jaw)
+  4  AH       — a as in "father" (wide open mouth, jaw drops)
+  5  OH       — o as in "go" (rounded lips, medium open)
+  6  OO       — oo as in "food" (tight round lips, small opening)
+  7  FV       — f, v (lower lip tucked under upper teeth)
+  8  L_TH     — l, th (tongue visible, tip touches teeth/ridge)
 
 No external NLP dependencies — uses a fast rule-based English
 letter-to-phoneme mapper that covers common patterns.
@@ -24,61 +27,67 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# ── Viseme IDs ──────────────────────────────────────────────────────────────
-CLOSED = 0
-AH = 1
-OH = 2
-EE = 3
-FV = 4
-BMP = 5
-LDN = 6
-WQ = 7
+# ── Viseme IDs (aligned with Rhubarb Preston Blair shapes) ─────────────────
+CLOSED = 0       # X — silence / rest
+MBP = 1          # A — lips pressed
+SMALL_OPEN = 2   # B — small generic opening
+EH = 3           # C — mid open (e in "bed")
+AH = 4           # D — wide open (a in "father")
+OH = 5           # E — rounded medium
+OO = 6           # F — tight round
+FV = 7           # G — lip tuck (f, v)
+L_TH = 8         # H — tongue visible (l, th)
 
-VISEME_NAMES = ["CLOSED", "AH", "OH", "EE", "FV", "BMP", "LDN", "WQ"]
+NUM_VISEMES = 9
+
+VISEME_NAMES = [
+    "CLOSED", "MBP", "SMALL_OPEN", "EH", "AH",
+    "OH", "OO", "FV", "L_TH",
+]
 
 # ── Digraph / trigraph → viseme (checked FIRST, longest match wins) ─────────
 _DIGRAPH_MAP: List[tuple] = [
     # Trigraphs
-    ("tch", [LDN, WQ]),
-    ("sch", [WQ]),
+    ("tch", [SMALL_OPEN, EH]),
+    ("sch", [SMALL_OPEN]),
     ("igh", [AH]),
-    ("ous", [AH, LDN]),
-    ("tion", [WQ, AH, LDN]),
-    ("sion", [WQ, AH, LDN]),
+    ("ous", [AH, SMALL_OPEN]),
+    ("tion", [SMALL_OPEN, AH, SMALL_OPEN]),
+    ("sion", [SMALL_OPEN, AH, SMALL_OPEN]),
     # Digraphs — consonants
-    ("th", [LDN]),
-    ("sh", [WQ]),
-    ("ch", [WQ]),
+    ("th", [L_TH]),
+    ("sh", [SMALL_OPEN]),
+    ("ch", [SMALL_OPEN]),
     ("ph", [FV]),
-    ("wh", [WQ]),
-    ("ck", [WQ]),
-    ("ng", [WQ]),
-    ("qu", [WQ, OH]),
-    ("gh", []),       # silent in "light", aspirated elsewhere — skip
-    ("kn", [LDN]),
-    ("wr", [LDN]),
-    ("gn", [LDN]),
+    ("wh", [OO]),
+    ("ck", [SMALL_OPEN]),
+    ("ng", [SMALL_OPEN]),
+    ("qu", [OO, OH]),
+    ("gh", []),       # silent in "light" — skip
+    ("kn", [SMALL_OPEN]),
+    ("wr", [SMALL_OPEN]),
+    ("gn", [SMALL_OPEN]),
     # Digraphs — vowels
-    ("ee", [EE]),
-    ("ea", [EE]),
-    ("oo", [OH]),
-    ("ou", [AH, OH]),
+    ("ee", [EH]),
+    ("ea", [EH]),
+    ("oo", [OO]),
+    ("ou", [AH, OO]),
     ("ow", [AH, OH]),
-    ("oi", [OH, EE]),
-    ("oy", [OH, EE]),
-    ("ai", [AH, EE]),
-    ("ay", [AH, EE]),
-    ("ei", [AH, EE]),
-    ("ey", [AH, EE]),
-    ("ie", [EE]),
+    ("oi", [OH, EH]),
+    ("oy", [OH, EH]),
+    ("ai", [AH, EH]),
+    ("ay", [AH, EH]),
+    ("ei", [AH, EH]),
+    ("ey", [AH, EH]),
+    ("ie", [EH]),
     ("au", [AH, OH]),
     ("aw", [AH]),
     ("oa", [OH]),
-    ("ue", [OH]),
-    ("ui", [OH, EE]),
-    ("er", [AH]),
-    ("ir", [AH]),
-    ("ur", [AH]),
+    ("ue", [OO]),
+    ("ui", [OO, EH]),
+    ("er", [EH]),
+    ("ir", [EH]),
+    ("ur", [EH]),
     ("or", [OH]),
     ("ar", [AH]),
 ]
@@ -87,35 +96,35 @@ _DIGRAPH_MAP: List[tuple] = [
 _LETTER_MAP: Dict[str, int] = {
     # Vowels
     "a": AH,
-    "e": EE,
-    "i": EE,
+    "e": EH,
+    "i": EH,
     "o": OH,
-    "u": OH,
-    "y": EE,
+    "u": OO,
+    "y": EH,
     # Labial stops / nasals (lips close)
-    "b": BMP,
-    "m": BMP,
-    "p": BMP,
+    "b": MBP,
+    "m": MBP,
+    "p": MBP,
     # Labiodental fricatives (lip tuck)
     "f": FV,
     "v": FV,
-    # Alveolar / dental (tongue up, small opening)
-    "d": LDN,
-    "l": LDN,
-    "n": LDN,
-    "r": LDN,
-    "s": LDN,
-    "t": LDN,
-    "z": LDN,
-    # Velar / palatal / glottal (teeth together / lips forward)
-    "c": WQ,
-    "g": WQ,
+    # Alveolar / dental / tongue
+    "d": SMALL_OPEN,
+    "l": L_TH,
+    "n": SMALL_OPEN,
+    "r": SMALL_OPEN,
+    "s": SMALL_OPEN,
+    "t": SMALL_OPEN,
+    "z": SMALL_OPEN,
+    # Velar / palatal / glottal
+    "c": SMALL_OPEN,
+    "g": SMALL_OPEN,
     "h": AH,
-    "j": WQ,
-    "k": WQ,
-    "q": WQ,
-    "w": WQ,
-    "x": WQ,
+    "j": SMALL_OPEN,
+    "k": SMALL_OPEN,
+    "q": OO,
+    "w": OO,
+    "x": SMALL_OPEN,
 }
 
 
@@ -146,7 +155,7 @@ def word_to_visemes(word: str) -> List[int]:
                 break
         if not matched:
             ch = word[i]
-            vid = _LETTER_MAP.get(ch, LDN)  # default to small opening
+            vid = _LETTER_MAP.get(ch, SMALL_OPEN)  # default to small opening
             visemes.append(vid)
             i += 1
 

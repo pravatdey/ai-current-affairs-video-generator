@@ -145,10 +145,12 @@ class VideoGenerationPipeline:
             else:
                 articles = []
 
-            # Get articles for video (4 articles for 15-min video)
+            # Get articles for video (scale with duration)
+            duration_max = self.config.get("video", {}).get("duration_max", 10)
+            max_articles = max(1, min(4, duration_max // 3))
             video_articles = self.scraper.get_articles_for_video(
                 language=language,
-                max_articles=4
+                max_articles=max_articles
             )
 
             if not video_articles:

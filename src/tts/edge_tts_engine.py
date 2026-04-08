@@ -408,24 +408,37 @@ class EdgeTTSEngine(BaseTTS):
                 temp_path = temp_dir / f"chunk_{i}.mp3"
                 temp_files.append(temp_path)
 
-                communicate = edge_tts.Communicate(
-                    text=chunk,
-                    voice=voice,
-                    rate=rate,
-                    pitch=pitch
-                )
-
-                # Stream to capture word boundaries
+                # Stream to capture word boundaries (retry up to 3 times)
                 chunk_audio = b""
-                async for evt in communicate.stream():
-                    if evt["type"] == "audio":
-                        chunk_audio += evt["data"]
-                    elif evt["type"] == "WordBoundary":
-                        all_word_boundaries.append({
-                            "text": evt["text"],
-                            "offset_us": evt["offset"] / 10 + cumulative_offset_us,
-                            "duration_us": evt["duration"] / 10,
-                        })
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        chunk_audio = b""
+                        communicate = edge_tts.Communicate(
+                            text=chunk,
+                            voice=voice,
+                            rate=rate,
+                            pitch=pitch
+                        )
+                        async for evt in communicate.stream():
+                            if evt["type"] == "audio":
+                                chunk_audio += evt["data"]
+                            elif evt["type"] == "WordBoundary":
+                                all_word_boundaries.append({
+                                    "text": evt["text"],
+                                    "offset_us": evt["offset"] / 10 + cumulative_offset_us,
+                                    "duration_us": evt["duration"] / 10,
+                                })
+                        if chunk_audio:
+                            break
+                        logger.warning(f"Chunk {i} returned empty audio, retry {attempt + 1}/{max_retries}")
+                    except Exception as retry_err:
+                        logger.warning(f"Chunk {i} TTS error (attempt {attempt + 1}): {retry_err}")
+                        if attempt == max_retries - 1:
+                            raise
+
+                if not chunk_audio:
+                    raise RuntimeError(f"Edge TTS returned empty audio for chunk {i} after {max_retries} retries")
 
                 with open(str(temp_path), "wb") as f:
                     f.write(chunk_audio)
