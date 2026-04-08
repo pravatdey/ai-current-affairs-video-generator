@@ -9,8 +9,8 @@ app:
 
 # Video Settings
 video:
-  duration_min: 1          # Minimum video duration in minutes
-  duration_max: 1          # Maximum video duration in minutes
+  duration_min: 5          # Minimum video duration in minutes
+  duration_max: 15         # Maximum video duration in minutes
   resolution:
     width: 1280
     height: 720
