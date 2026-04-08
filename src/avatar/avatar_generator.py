@@ -384,7 +384,7 @@ class AvatarGenerator:
             wav2lip_path: Path to Wav2Lip installation
         """
         self.method = method
-        self.avatar_image = avatar_image or "assets/avatars/news_anchor.png"
+        self.avatar_image = avatar_image or "assets/avatars/teacher.jpg"
         self.sadtalker_path = sadtalker_path or os.getenv("SADTALKER_PATH", "")
         self.wav2lip_path = wav2lip_path or os.getenv("WAV2LIP_PATH", "")
 
@@ -404,6 +404,10 @@ class AvatarGenerator:
         """Detect which generation methods are available"""
         available = ["simple"]  # Always available
 
+        # Check for EchoMimic (best quality, free HF Space GPU)
+        if self._check_echomimic():
+            available.append("echomimic")
+
         # Check for SadTalker
         if self._check_sadtalker():
             available.append("sadtalker")
@@ -413,6 +417,15 @@ class AvatarGenerator:
             available.append("wav2lip")
 
         return available
+
+    def _check_echomimic(self) -> bool:
+        """Check if EchoMimic HF Space is available"""
+        try:
+            from src.avatar.echomimic_engine import EchoMimicEngine
+            engine = EchoMimicEngine()
+            return engine.is_available()
+        except Exception:
+            return False
 
     def _check_sadtalker(self) -> bool:
         """Check if SadTalker is available"""
@@ -438,8 +451,10 @@ class AvatarGenerator:
         return False
 
     def _select_best_method(self) -> str:
-        """Select the best available method"""
-        if "sadtalker" in self.available_methods:
+        """Select the best available method (quality order)"""
+        if "echomimic" in self.available_methods:
+            return "echomimic"
+        elif "sadtalker" in self.available_methods:
             return "sadtalker"
         elif "wav2lip" in self.available_methods:
             return "wav2lip"
@@ -495,11 +510,54 @@ class AvatarGenerator:
         logger.info(f"Generating avatar video: method={method}")
 
         # Generate based on method
-        if method == "sadtalker" and "sadtalker" in self.available_methods:
+        if method == "echomimic" and "echomimic" in self.available_methods:
+            return self._generate_echomimic(audio_path, output_path, avatar_image)
+        elif method == "sadtalker" and "sadtalker" in self.available_methods:
             return self._generate_sadtalker(audio_path, output_path, avatar_image)
         elif method == "wav2lip" and "wav2lip" in self.available_methods:
             return self._generate_wav2lip(audio_path, output_path, avatar_image)
         else:
+            return self._generate_simple(audio_path, output_path, avatar_image)
+
+    def _generate_echomimic(
+        self,
+        audio_path: str,
+        output_path: str,
+        avatar_image: str
+    ) -> AvatarResult:
+        """Generate video using EchoMimic HF Space (best quality, free cloud GPU)"""
+        try:
+            from src.avatar.echomimic_engine import EchoMimicEngine
+
+            abs_audio = str(Path(audio_path).resolve())
+            abs_output = str(Path(output_path).resolve())
+            abs_avatar = str(Path(avatar_image).resolve())
+
+            engine = EchoMimicEngine()
+            logger.info("Running EchoMimic via HuggingFace Space (free cloud GPU)...")
+
+            result = engine.generate(
+                audio_path=abs_audio,
+                image_path=abs_avatar,
+                output_path=abs_output
+            )
+
+            if result["success"]:
+                return AvatarResult(
+                    success=True,
+                    video_path=output_path,
+                    duration=result["duration"],
+                    method="echomimic"
+                )
+            else:
+                raise Exception(result["error"])
+
+        except Exception as e:
+            logger.error(f"EchoMimic generation failed: {e}")
+            # Fallback to wav2lip
+            if "wav2lip" in self.available_methods:
+                logger.info("Falling back to Wav2Lip ONNX...")
+                return self._generate_wav2lip(audio_path, output_path, avatar_image)
             return self._generate_simple(audio_path, output_path, avatar_image)
 
     def _generate_sadtalker(
@@ -1056,7 +1114,7 @@ class AvatarGenerator:
             import numpy as np
             import math
 
-            avatar_path = Path("assets/avatars/news_anchor.png")
+            avatar_path = Path("assets/avatars/teacher.jpg")
             avatar_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Draw at 2x resolution for anti-aliasing, downscale at the end

@@ -177,8 +177,27 @@ def wav2lip_onnx_inference(
     temp_avi = str(Path(output_path).parent / "temp_wav2lip_result.avi")
     out = cv2.VideoWriter(temp_avi, cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
-    # Process in batches
+    # Pre-compute blending mask for mouth-only paste
+    crop_h, crop_w = (y2 - y1), (x2 - x1)
+    original_face_crop = face_image[y1:y2, x1:x2].copy()
+    mouth_top = int(crop_h * 0.55)
+    feather_size = int(crop_h * 0.12)
+    blend_mask = np.zeros((crop_h, crop_w), dtype=np.float32)
+    for row in range(mouth_top, crop_h):
+        if row < mouth_top + feather_size:
+            blend_mask[row, :] = (row - mouth_top) / feather_size
+        else:
+            blend_mask[row, :] = 1.0
+    edge_feather = int(crop_w * 0.08)
+    for col in range(edge_feather):
+        alpha = col / edge_feather
+        blend_mask[:, col] *= alpha
+        blend_mask[:, crop_w - 1 - col] *= alpha
+    blend_mask_3ch = np.stack([blend_mask] * 3, axis=-1)
+
+    # Process in batches — write frames directly (no buffering)
     total_batches = int(np.ceil(len(mel_chunks) / batch_size))
+    frame_count = 0
 
     for batch_idx in range(total_batches):
         start = batch_idx * batch_size
@@ -209,20 +228,33 @@ def wav2lip_onnx_inference(
             'video_frames': img_batch_input
         })[0]
 
-        # Post-process predictions
+        # Post-process: mouth-only blend + write directly (no buffering)
         pred = np.transpose(pred, (0, 2, 3, 1)) * 255.0
 
         for p in pred:
             frame = face_image.copy()
             p_resized = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
-            frame[y1:y2, x1:x2] = p_resized
+
+            # Blend: keep original face, only paste mouth region from Wav2Lip
+            wav2lip_face = p_resized.astype(np.float32)
+            original = original_face_crop.astype(np.float32)
+            blended = original * (1.0 - blend_mask_3ch) + wav2lip_face * blend_mask_3ch
+
+            # Sharpen mouth area
+            mouth_region = blended[mouth_top:, :]
+            blur = cv2.GaussianBlur(mouth_region, (0, 0), 1.5)
+            blended[mouth_top:, :] = cv2.addWeighted(mouth_region, 1.3, blur, -0.3, 0)
+
+            frame[y1:y2, x1:x2] = np.clip(blended, 0, 255).astype(np.uint8)
             out.write(frame)
+            frame_count += 1
 
         if batch_idx % 10 == 0:
             progress = (batch_idx + 1) / total_batches * 100
             logger.info(f"Wav2Lip ONNX progress: {progress:.0f}% ({batch_idx + 1}/{total_batches} batches)")
 
     out.release()
+    logger.info(f"Wrote {frame_count} blended frames")
 
     # Mux audio + video with ffmpeg
     try:
