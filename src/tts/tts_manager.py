@@ -3,6 +3,7 @@ TTS Manager - Orchestrates text-to-speech generation
 """
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -15,11 +16,26 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Load .env so HF_TOKEN is available even if run outside shell env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 class TTSManager:
     """
     Manages TTS generation with support for multiple languages,
     voice selection, and audio post-processing.
+
+    Supports two engines:
+      - "sarvam": Sarvam AI bulbul:v3 via REST API
+                  (realistic Indian Hindi/Indic voices, no GPU needed)
+      - "edge":   Microsoft Edge TTS (fast, free, slightly robotic)
+
+    If the primary engine is "sarvam" and a request fails (network,
+    rate limit, missing key), TTSManager automatically falls back to Edge TTS.
     """
 
     def __init__(self, config_path: str = "config/settings.yaml"):
@@ -30,17 +46,53 @@ class TTSManager:
             config_path: Path to settings configuration
         """
         self.config = self._load_config(config_path)
+
+        # ── Always create Edge TTS engine (used as fallback) ───────────
         tts_edge_config = self.config.get("tts", {}).get("edge", {})
-        self.engine = EdgeTTSEngine(
+        self.edge_engine = EdgeTTSEngine(
             rate=tts_edge_config.get("rate", "-8%"),
             pitch=tts_edge_config.get("pitch", "-5Hz"),
             volume=tts_edge_config.get("volume", "+0%"),
         )
 
+        # ── Primary engine selection ───────────────────────────────────
+        tts_config = self.config.get("tts", {})
+        provider = tts_config.get("provider", "edge")
+        self.provider = provider
+        self.sarvam_engine = None
+
+        if provider == "sarvam":
+            try:
+                from .sarvam_tts_engine import SarvamTTSEngine
+                sarvam_config = tts_config.get("sarvam", {})
+                self.sarvam_engine = SarvamTTSEngine(
+                    api_key=os.getenv("SARVAM_API_KEY"),
+                    default_language=sarvam_config.get("default_language", "hi"),
+                    speaker=sarvam_config.get("speaker"),
+                    pace=sarvam_config.get("pace", 1.0),
+                    temperature=sarvam_config.get("temperature", 0.6),
+                    sample_rate=sarvam_config.get("sample_rate", 24000),
+                    timeout=sarvam_config.get("timeout", 120),
+                )
+                logger.info("Primary TTS engine: Sarvam (bulbul:v3)")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to init Sarvam engine ({e}); "
+                    "falling back to Edge TTS as primary"
+                )
+                self.provider = "edge"
+
+        # Backward-compat alias so existing code paths that reference
+        # `self.engine` keep working (points at the primary engine).
+        self.engine = self.sarvam_engine if self.sarvam_engine else self.edge_engine
+
         # Load language configurations
         self.languages = self._load_languages()
 
-        logger.info(f"TTSManager initialized with {len(self.languages)} languages")
+        logger.info(
+            f"TTSManager ready: provider={self.provider}, "
+            f"{len(self.languages)} languages"
+        )
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from file"""
@@ -104,26 +156,47 @@ class TTSManager:
         # Get language settings
         lang_config = self.languages.get(language, self.languages["en"])
 
-        voice = voice or lang_config.get("voice")
-        rate = rate or lang_config.get("rate", "+0%")
-        pitch = pitch or lang_config.get("pitch", "+0Hz")
+        edge_voice = voice or lang_config.get("voice")
+        edge_rate = rate or lang_config.get("rate", "+0%")
+        edge_pitch = pitch or lang_config.get("pitch", "+0Hz")
 
-        # Use long text synthesis for longer content
+        # ── Try Sarvam (bulbul:v3) first if configured ───────────────
+        if self.sarvam_engine is not None:
+            try:
+                logger.info(
+                    f"Generating audio via Sarvam (bulbul:v3), lang={language}"
+                )
+                sarvam_result = await self.sarvam_engine.synthesize(
+                    text=text,
+                    output_path=output_path,
+                    language=language,
+                )
+                if sarvam_result.success:
+                    return sarvam_result
+                logger.warning(
+                    f"Sarvam failed ({sarvam_result.error}); falling back to Edge TTS"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Sarvam raised exception ({e}); falling back to Edge TTS"
+                )
+
+        # ── Edge TTS (primary OR fallback) ───────────────────────────
         if len(text) > 5000:
-            result = await self.engine.synthesize_long_text(
+            result = await self.edge_engine.synthesize_long_text(
                 text=text,
                 output_path=output_path,
-                voice=voice,
-                rate=rate,
-                pitch=pitch
+                voice=edge_voice,
+                rate=edge_rate,
+                pitch=edge_pitch,
             )
         else:
-            result = await self.engine.synthesize(
+            result = await self.edge_engine.synthesize(
                 text=text,
                 output_path=output_path,
-                voice=voice,
-                rate=rate,
-                pitch=pitch
+                voice=edge_voice,
+                rate=edge_rate,
+                pitch=edge_pitch,
             )
 
         return result

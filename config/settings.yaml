@@ -66,10 +66,23 @@ llm:
 
 # Text-to-Speech Configuration
 tts:
-  provider: "edge"         # Options: "edge", "coqui"
+  provider: "sarvam"       # Options: "sarvam" (realistic Indian voices), "edge" (fast fallback)
   output_format: "mp3"
 
-  # Edge TTS settings (tuned for warm, soothing voice)
+  # Sarvam AI settings — realistic Indian Hindi via bulbul:v3
+  # Requires SARVAM_API_KEY in .env (free: https://dashboard.sarvam.ai/)
+  # Falls back to Edge TTS automatically if API fails.
+  sarvam:
+    default_language: "hi"     # Primary language
+    speaker: "aditya"          # Speakers: aditya, priya, ritu, shubh, rahul, neha, pooja, rohan,
+                               # simran, kavya, amit, ishita, shreya, varun, manan, etc.
+                               # Set to null to use per-language default from DEFAULT_SPEAKERS.
+    pace: 0.95                 # 0.5-2.0 — slightly slower for clear news delivery
+    temperature: 0.6           # 0.01-2.0 — lower = more consistent delivery
+    sample_rate: 24000         # Hz
+    timeout: 120               # HTTP timeout in seconds
+
+  # Edge TTS settings (fallback engine — tuned for warm, soothing voice)
   edge:
     rate: "-8%"            # Slower = calmer, more pleasant
     pitch: "-5Hz"          # Deeper = warmer tone
