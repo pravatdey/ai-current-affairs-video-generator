@@ -66,21 +66,28 @@ llm:
 
 # Text-to-Speech Configuration
 tts:
-  provider: "sarvam"       # Options: "sarvam" (realistic Indian voices), "edge" (fast fallback)
+  provider: "gemini"       # Options: "gemini" (FREE, realistic), "sarvam" (paid, best Hindi), "edge" (free fallback)
   output_format: "mp3"
 
-  # Sarvam AI settings — realistic Indian Hindi via bulbul:v3
-  # Requires SARVAM_API_KEY in .env (free: https://dashboard.sarvam.ai/)
+  # Google Gemini TTS — FREE, realistic, 24+ languages including Hindi
+  # Requires GEMINI_API_KEY in .env (free: https://aistudio.google.com/apikey)
   # Falls back to Edge TTS automatically if API fails.
-  sarvam:
+  gemini:
     default_language: "hi"     # Primary language
-    speaker: "aditya"          # Speakers: aditya, priya, ritu, shubh, rahul, neha, pooja, rohan,
-                               # simran, kavya, amit, ishita, shreya, varun, manan, etc.
-                               # Set to null to use per-language default from DEFAULT_SPEAKERS.
-    pace: 0.95                 # 0.5-2.0 — slightly slower for clear news delivery
-    temperature: 0.6           # 0.01-2.0 — lower = more consistent delivery
-    sample_rate: 24000         # Hz
+    voice_name: "Kore"         # Voices: Kore, Orus, Zephyr, Puck, Charon, Fenrir, Leda,
+                               # Pegasus, Proteus, Perseus, Iapetus, Umbriel, Algieba, etc.
+                               # Set to null to use per-language default.
     timeout: 120               # HTTP timeout in seconds
+
+  # Sarvam AI settings — PAID per use, best Hindi quality
+  # Requires SARVAM_API_KEY in .env (https://dashboard.sarvam.ai/)
+  sarvam:
+    default_language: "hi"
+    speaker: "aditya"
+    pace: 0.95
+    temperature: 0.6
+    sample_rate: 24000
+    timeout: 120
 
   # Edge TTS settings (fallback engine — tuned for warm, soothing voice)
   edge:

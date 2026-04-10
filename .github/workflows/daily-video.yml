@@ -108,6 +108,7 @@ jobs:
       - name: Setup environment file
         run: |
           echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" > .env
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "SARVAM_API_KEY=${{ secrets.SARVAM_API_KEY }}" >> .env
           echo "WAV2LIP_PATH=$(pwd)/tools/Wav2Lip" >> .env
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
@@ -166,6 +167,7 @@ jobs:
       - name: Run video generation pipeline
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
         run: |
           python main.py \

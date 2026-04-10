@@ -29,13 +29,12 @@ class TTSManager:
     Manages TTS generation with support for multiple languages,
     voice selection, and audio post-processing.
 
-    Supports two engines:
-      - "sarvam": Sarvam AI bulbul:v3 via REST API
-                  (realistic Indian Hindi/Indic voices, no GPU needed)
-      - "edge":   Microsoft Edge TTS (fast, free, slightly robotic)
+    Supports three engines:
+      - "gemini":  Google Gemini 2.5 Flash TTS (FREE, realistic, 24+ languages)
+      - "sarvam":  Sarvam AI bulbul:v3 (paid per use, best Hindi quality)
+      - "edge":    Microsoft Edge TTS (free, fast, slightly robotic)
 
-    If the primary engine is "sarvam" and a request fails (network,
-    rate limit, missing key), TTSManager automatically falls back to Edge TTS.
+    If the primary engine fails, TTSManager automatically falls back to Edge TTS.
     """
 
     def __init__(self, config_path: str = "config/settings.yaml"):
@@ -59,13 +58,31 @@ class TTSManager:
         tts_config = self.config.get("tts", {})
         provider = tts_config.get("provider", "edge")
         self.provider = provider
-        self.sarvam_engine = None
+        self.primary_engine = None
 
-        if provider == "sarvam":
+        if provider == "gemini":
+            try:
+                from .gemini_tts_engine import GeminiTTSEngine
+                gemini_config = tts_config.get("gemini", {})
+                self.primary_engine = GeminiTTSEngine(
+                    api_key=os.getenv("GEMINI_API_KEY"),
+                    default_language=gemini_config.get("default_language", "hi"),
+                    voice_name=gemini_config.get("voice_name"),
+                    timeout=gemini_config.get("timeout", 120),
+                )
+                logger.info("Primary TTS engine: Gemini (2.5 Flash TTS, FREE)")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to init Gemini engine ({e}); "
+                    "falling back to Edge TTS as primary"
+                )
+                self.provider = "edge"
+
+        elif provider == "sarvam":
             try:
                 from .sarvam_tts_engine import SarvamTTSEngine
                 sarvam_config = tts_config.get("sarvam", {})
-                self.sarvam_engine = SarvamTTSEngine(
+                self.primary_engine = SarvamTTSEngine(
                     api_key=os.getenv("SARVAM_API_KEY"),
                     default_language=sarvam_config.get("default_language", "hi"),
                     speaker=sarvam_config.get("speaker"),
@@ -74,7 +91,7 @@ class TTSManager:
                     sample_rate=sarvam_config.get("sample_rate", 24000),
                     timeout=sarvam_config.get("timeout", 120),
                 )
-                logger.info("Primary TTS engine: Sarvam (bulbul:v3)")
+                logger.info("Primary TTS engine: Sarvam (bulbul:v3, PAID)")
             except Exception as e:
                 logger.warning(
                     f"Failed to init Sarvam engine ({e}); "
@@ -84,7 +101,7 @@ class TTSManager:
 
         # Backward-compat alias so existing code paths that reference
         # `self.engine` keep working (points at the primary engine).
-        self.engine = self.sarvam_engine if self.sarvam_engine else self.edge_engine
+        self.engine = self.primary_engine if self.primary_engine else self.edge_engine
 
         # Load language configurations
         self.languages = self._load_languages()
@@ -160,25 +177,27 @@ class TTSManager:
         edge_rate = rate or lang_config.get("rate", "+0%")
         edge_pitch = pitch or lang_config.get("pitch", "+0Hz")
 
-        # ── Try Sarvam (bulbul:v3) first if configured ───────────────
-        if self.sarvam_engine is not None:
+        # ── Try primary engine (Gemini/Sarvam) first if configured ────
+        if self.primary_engine is not None:
             try:
                 logger.info(
-                    f"Generating audio via Sarvam (bulbul:v3), lang={language}"
+                    f"Generating audio via {self.provider}, lang={language}"
                 )
-                sarvam_result = await self.sarvam_engine.synthesize(
+                primary_result = await self.primary_engine.synthesize(
                     text=text,
                     output_path=output_path,
                     language=language,
                 )
-                if sarvam_result.success:
-                    return sarvam_result
+                if primary_result.success:
+                    return primary_result
                 logger.warning(
-                    f"Sarvam failed ({sarvam_result.error}); falling back to Edge TTS"
+                    f"{self.provider} failed ({primary_result.error}); "
+                    "falling back to Edge TTS"
                 )
             except Exception as e:
                 logger.warning(
-                    f"Sarvam raised exception ({e}); falling back to Edge TTS"
+                    f"{self.provider} raised exception ({e}); "
+                    "falling back to Edge TTS"
                 )
 
         # ── Edge TTS (primary OR fallback) ───────────────────────────
