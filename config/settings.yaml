@@ -74,7 +74,7 @@ tts:
   # Falls back to Edge TTS automatically if API fails.
   gemini:
     default_language: "hi"     # Primary language
-    voice_name: "Kore"         # Voices: Kore, Orus, Zephyr, Puck, Charon, Fenrir, Leda,
+    voice_name: "Fenrir"       # Voices: Fenrir, Orus, Charon, Puck, Kore, Zephyr, Leda,
                                # Pegasus, Proteus, Perseus, Iapetus, Umbriel, Algieba, etc.
                                # Set to null to use per-language default.
     timeout: 120               # HTTP timeout in seconds

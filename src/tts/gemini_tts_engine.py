@@ -44,11 +44,11 @@ class GeminiTTSEngine(BaseTTS):
     # Gemini TTS voices — all support multilingual including Hindi
     # Picked based on clarity and news-anchor suitability
     DEFAULT_VOICES = {
-        "hi": "Kore",       # Clear, confident — good for Hindi news
-        "en": "Orus",       # Clear male English
-        "ta": "Kore",
-        "te": "Kore",
-        "bn": "Kore",
+        "hi": "Fenrir",     # Confident, strong male — matches male teacher avatar
+        "en": "Fenrir",     # Same voice for English consistency
+        "ta": "Fenrir",
+        "te": "Fenrir",
+        "bn": "Fenrir",
     }
 
     FEMALE_VOICES = {
@@ -280,7 +280,7 @@ class GeminiTTSEngine(BaseTTS):
         voice_name = (
             voice
             or self.voice_name_override
-            or self.DEFAULT_VOICES.get(language, "Kore")
+            or self.DEFAULT_VOICES.get(language, "Fenrir")
         )
 
         cleaned_text = self._preprocess_text(text)
@@ -307,6 +307,11 @@ class GeminiTTSEngine(BaseTTS):
 
             for i, chunk_text in enumerate(chunks):
                 logger.info(f"  Chunk {i+1}/{len(chunks)}: {len(chunk_text)} chars")
+
+                # Rate limit: Gemini free tier allows 3 requests/min
+                # Add 22s delay between chunks to stay within limit
+                if i > 0 and len(chunks) > 1:
+                    await asyncio.sleep(22)
 
                 pcm_bytes = await loop.run_in_executor(
                     None, self._synthesize_chunk_sync, chunk_text, voice_name
