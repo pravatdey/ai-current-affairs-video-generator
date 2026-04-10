@@ -105,7 +105,7 @@ tts:
 
 # Avatar Configuration
 avatar:
-  provider: "sadtalker"    # Options: "sadtalker", "wav2lip"
+  provider: "kdtalker"     # Options: "kdtalker" (realistic, free HF Space), "sadtalker", "wav2lip"
 
   # Default avatar image (place in assets/avatars/)
   default_image: "teacher.jpg"

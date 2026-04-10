@@ -404,7 +404,11 @@ class AvatarGenerator:
         """Detect which generation methods are available"""
         available = ["simple"]  # Always available
 
-        # Check for EchoMimic (best quality, free HF Space GPU)
+        # Check for KDTalker (best quality, free HF Space GPU, realistic)
+        if self._check_kdtalker():
+            available.append("kdtalker")
+
+        # Check for EchoMimic (good quality, free HF Space GPU)
         if self._check_echomimic():
             available.append("echomimic")
 
@@ -417,6 +421,15 @@ class AvatarGenerator:
             available.append("wav2lip")
 
         return available
+
+    def _check_kdtalker(self) -> bool:
+        """Check if KDTalker HF Space is available"""
+        try:
+            from src.avatar.kdtalker_engine import KDTalkerEngine
+            engine = KDTalkerEngine()
+            return engine.is_available()
+        except Exception:
+            return False
 
     def _check_echomimic(self) -> bool:
         """Check if EchoMimic HF Space is available"""
@@ -452,7 +465,9 @@ class AvatarGenerator:
 
     def _select_best_method(self) -> str:
         """Select the best available method (quality order)"""
-        if "echomimic" in self.available_methods:
+        if "kdtalker" in self.available_methods:
+            return "kdtalker"
+        elif "echomimic" in self.available_methods:
             return "echomimic"
         elif "sadtalker" in self.available_methods:
             return "sadtalker"
@@ -510,13 +525,54 @@ class AvatarGenerator:
         logger.info(f"Generating avatar video: method={method}")
 
         # Generate based on method
-        if method == "echomimic" and "echomimic" in self.available_methods:
+        if method == "kdtalker" and "kdtalker" in self.available_methods:
+            return self._generate_kdtalker(audio_path, output_path, avatar_image)
+        elif method == "echomimic" and "echomimic" in self.available_methods:
             return self._generate_echomimic(audio_path, output_path, avatar_image)
         elif method == "sadtalker" and "sadtalker" in self.available_methods:
             return self._generate_sadtalker(audio_path, output_path, avatar_image)
         elif method == "wav2lip" and "wav2lip" in self.available_methods:
             return self._generate_wav2lip(audio_path, output_path, avatar_image)
         else:
+            return self._generate_simple(audio_path, output_path, avatar_image)
+
+    def _generate_kdtalker(
+        self,
+        audio_path: str,
+        output_path: str,
+        avatar_image: str
+    ) -> AvatarResult:
+        """Generate video using KDTalker HF Space (realistic, free cloud GPU)"""
+        try:
+            from src.avatar.kdtalker_engine import KDTalkerEngine
+
+            abs_audio = str(Path(audio_path).resolve())
+            abs_output = str(Path(output_path).resolve())
+            abs_avatar = str(Path(avatar_image).resolve())
+
+            engine = KDTalkerEngine()
+            logger.info("Running KDTalker via HuggingFace Space (free cloud GPU)...")
+
+            result = engine.generate(
+                audio_path=abs_audio,
+                image_path=abs_avatar,
+                output_path=abs_output
+            )
+
+            if result["success"]:
+                return AvatarResult(
+                    success=True,
+                    video_path=output_path,
+                    duration=result["duration"],
+                    method="kdtalker"
+                )
+            else:
+                logger.error(f"KDTalker failed: {result['error']}")
+                logger.info("Falling back to sprite-based lip-sync...")
+                return self._generate_simple(audio_path, output_path, avatar_image)
+
+        except Exception as e:
+            logger.error(f"KDTalker generation failed: {e}")
             return self._generate_simple(audio_path, output_path, avatar_image)
 
     def _generate_echomimic(
