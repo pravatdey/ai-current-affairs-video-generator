@@ -759,6 +759,74 @@ class AvatarGenerator:
 
             # Frozen base frame (numpy) — we copy & paint over each frame
             base_array = np.array(pil_image)
+            img_h, img_w = base_array.shape[:2]
+
+            # ── Human-like micro-movement setup ─────────────────────────────
+            # Pad base image by 6px on each edge so head-sway never hits borders
+            _SWAY_PAD = 6
+            padded_base = np.pad(
+                base_array,
+                ((_SWAY_PAD, _SWAY_PAD), (_SWAY_PAD, _SWAY_PAD), (0, 0)),
+                mode='edge'
+            )
+
+            # Eye blink — deterministic schedule (reproducible)
+            import random as _rng
+            _rng.seed(42)
+            eye_y = max(0, mouth_region['cy'] - int(mouth_region['h'] * 5.5))
+            eye_strip_h = max(4, mouth_region['h'] // 3)
+            eye_x1 = max(0, mouth_region['cx'] - int(mouth_region['w'] * 2))
+            eye_x2 = min(img_w, mouth_region['cx'] + int(mouth_region['w'] * 2))
+
+            # Feather weights for smooth blink edges (top/bottom of strip)
+            blink_feather = np.ones(eye_strip_h, dtype=np.float32)
+            if eye_strip_h >= 4:
+                blink_feather[0] = 0.3
+                blink_feather[-1] = 0.3
+                blink_feather[1] = 0.7
+                blink_feather[-2] = 0.7
+
+            blink_times = []
+            _bt = _rng.uniform(2.0, 4.0)
+            while _bt < duration:
+                blink_times.append(_bt)
+                if _rng.random() < 0.15:  # 15% chance of double-blink
+                    blink_times.append(_bt + 0.15)
+                _bt += _rng.uniform(3.0, 6.0)
+
+            def _blink_intensity(t):
+                """Return 0-1 blink closure intensity. Fast close, slower open."""
+                _BLINK_DUR = 0.15
+                for bt in blink_times:
+                    dt = t - bt
+                    if 0 <= dt < _BLINK_DUR:
+                        phase = dt / _BLINK_DUR
+                        if phase < 0.4:
+                            return math.sin(phase / 0.4 * math.pi / 2)
+                        else:
+                            return math.cos((phase - 0.4) / 0.6 * math.pi / 2)
+                return 0.0
+
+            # Eyebrow region — slightly above eyes
+            brow_y = max(0, mouth_region['cy'] - int(mouth_region['h'] * 7.5))
+            brow_strip_h = max(6, mouth_region['h'] // 2)
+            brow_x1 = max(0, mouth_region['cx'] - int(mouth_region['w'] * 1.5))
+            brow_x2 = min(img_w, mouth_region['cx'] + int(mouth_region['w'] * 1.5))
+            # Smooth amplitude for slower eyebrow response
+            brow_amplitudes = np.convolve(
+                amplitudes, np.ones(12, dtype=np.float32) / 12, mode='same'
+            )
+
+            # Body breathing region — below chin
+            breathing_y = min(
+                img_h - 2,
+                mouth_region['cy'] + int(mouth_region['h'] * 4)
+            )
+
+            logger.info(
+                f"Micro-movements: {len(blink_times)} blinks, "
+                f"eye_y={eye_y}, brow_y={brow_y}, breath_y={breathing_y}"
+            )
 
             # ── Pre-render viseme sprite sheet (face-warped) ─────────────────
             try:
@@ -790,9 +858,60 @@ class AvatarGenerator:
                 frame_idx = min(int(t * fps), len(amplitudes) - 1)
                 amplitude = float(amplitudes[frame_idx])
 
-                # Subtle breathing brightness variation
+                # 1. Breathing brightness variation
                 brightness = 1.0 + math.sin(t * 0.9) * 0.008 + math.cos(t * 1.7) * 0.004
-                frame_array = np.clip(base_array * brightness, 0, 255).astype(np.uint8)
+
+                # 2. Head sway — multi-sine for non-repeating natural drift
+                sway_x = (math.sin(t * 0.37) * 2.5
+                          + math.sin(t * 0.71 + 1.2) * 1.5
+                          + math.sin(t * 1.53 + 0.7) * 0.8)
+                sway_y = (math.sin(t * 0.29 + 0.5) * 1.2
+                          + math.sin(t * 0.83 + 2.1) * 0.7)
+                ox = _SWAY_PAD + int(round(sway_x))
+                oy = _SWAY_PAD + int(round(sway_y))
+                frame_array = padded_base[oy:oy + img_h, ox:ox + img_w].copy()
+                frame_array = np.clip(
+                    frame_array * brightness, 0, 255
+                ).astype(np.uint8)
+
+                # 3. Eye blink — fast close, slower open
+                blink_val = _blink_intensity(t)
+                if blink_val > 0.01:
+                    y1 = eye_y
+                    y2 = min(eye_y + eye_strip_h, img_h)
+                    for row_i in range(y1, y2):
+                        feather_w = blink_feather[min(row_i - y1, len(blink_feather) - 1)]
+                        darkening = 1.0 - blink_val * 0.85 * feather_w
+                        frame_array[row_i, eye_x1:eye_x2] = np.clip(
+                            frame_array[row_i, eye_x1:eye_x2] * darkening,
+                            0, 255
+                        ).astype(np.uint8)
+
+                # 4. Eyebrow raise on emphasis (amplitude-driven)
+                brow_amp = float(brow_amplitudes[frame_idx])
+                if brow_amp > 0.3:
+                    brow_shift = -min(2, int(round((brow_amp - 0.3) * 3.0)))
+                    if brow_shift != 0 and brow_y + brow_shift >= 0:
+                        src_y1 = brow_y
+                        src_y2 = min(brow_y + brow_strip_h, img_h)
+                        dst_y1 = src_y1 + brow_shift
+                        dst_y2 = src_y2 + brow_shift
+                        if dst_y1 >= 0 and dst_y2 <= img_h:
+                            strip = frame_array[src_y1:src_y2, brow_x1:brow_x2].copy()
+                            frame_array[dst_y1:dst_y2, brow_x1:brow_x2] = strip
+
+                # 5. Body breathing — subtle vertical chest shift
+                bs = math.sin(t * 0.9) * 1.0 + math.sin(t * 1.7 + 0.5) * 0.5
+                bshift = int(round(bs))
+                if bshift != 0 and breathing_y < img_h - 1:
+                    body = frame_array[breathing_y:, :].copy()
+                    body_h = body.shape[0]
+                    if bshift > 0 and bshift < body_h:
+                        frame_array[breathing_y + bshift:, :] = body[:body_h - bshift]
+                        frame_array[breathing_y:breathing_y + bshift, :] = body[0]
+                    elif bshift < 0 and -bshift < body_h:
+                        frame_array[breathing_y:breathing_y + body_h + bshift, :] = body[-bshift:]
+                        frame_array[breathing_y + body_h + bshift:, :] = body[-1]
 
                 if not use_viseme:
                     return frame_array
