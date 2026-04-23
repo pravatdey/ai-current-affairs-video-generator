@@ -9,8 +9,8 @@ app:
 
 # Video Settings
 video:
-  duration_min: 5          # Minimum video duration in minutes
-  duration_max: 15         # Maximum video duration in minutes
+  duration_min: 1          # Minimum video duration in minutes
+  duration_max: 20         # Maximum video duration in minutes (20 min for full current affairs)
   resolution:
     width: 1280
     height: 720
@@ -23,7 +23,7 @@ video:
 
 # Language Configuration
 languages:
-  default: "en"
+  default: "hi"
   supported:
     - code: "en"
       name: "English"
@@ -62,7 +62,7 @@ llm:
     api_key: ""            # Set via environment variable GROQ_API_KEY
     model: "llama-3.3-70b-versatile"
     temperature: 0.7
-    max_tokens: 4000
+    max_tokens: 8000       # Higher for 20-min scripts
 
 # Text-to-Speech Configuration
 tts:
@@ -105,7 +105,8 @@ tts:
 
 # Avatar Configuration
 avatar:
-  provider: "kdtalker"     # Options: "kdtalker" (realistic, free HF Space), "sadtalker", "wav2lip"
+  enabled: false           # Set to true to re-enable avatar generation
+  provider: "simple"       # Options: "kdtalker" (realistic, free HF Space), "sadtalker", "wav2lip", "simple" (fast local)
 
   # Default avatar image (place in assets/avatars/)
   default_image: "teacher.jpg"
@@ -133,22 +134,25 @@ composition:
     image: ""              # Path to background image
     video: ""              # Path to background video
 
-  # Presentation slides background (shows content behind avatar)
+  # Presentation slides — full-screen educational tutorial style
   presentation_slides:
     enabled: true
-    content_start_x_pct: 0.33   # Content starts at 33% from left (avatar area)
+    content_start_x_pct: 0.04   # Near full-screen slides (small left margin)
     transition_duration: 0.5     # Fade duration between slides
     max_key_points: 4            # Max bullet points (4 fits best with larger fonts)
     show_subject_badge: true     # Prominent colored subject badge bar
     show_terms_as_badges: true   # Pill badges instead of table for terms
     bullet_style: "numbered"     # "numbered" (circled 1,2,3) or "dots"
 
-  # Avatar position — "left" auto-fills the left zone up to content_start_x_pct
+  # Avatar position — small circular webcam overlay in corner (tutorial style)
   avatar:
-    position: "left"       # "left" = auto-fill left zone, "center"/"right" = manual
-    scale: 0.55            # Only used for center/right positioning
-    x_offset: 0            # Only used for center/right positioning
-    y_offset: 0            # Only used for center/right positioning
+    position: "corner"     # "corner" = small circle bottom-left (tutorial style)
+    corner: "bottom-left"  # Which corner: bottom-left, bottom-right, top-left, top-right
+    scale: 0.22            # Small webcam-style overlay (~22% of frame height)
+    margin: 20             # Pixels from edge
+    circular: true         # Circular mask like webcam overlay
+    border_color: "#00b4ff" # Accent border around avatar circle
+    border_width: 4
 
   # Text overlays
   text:
@@ -191,6 +195,8 @@ composition:
 
 # Thumbnail Settings
 thumbnail:
+  # Use a fixed template image for all videos (skips procedural generation)
+  template_image: "assets/thumbnails/default_thumbnail.png"
   width: 1280
   height: 720
   format: "png"
@@ -216,7 +222,7 @@ youtube:
   upload:
     privacy_status: "public"  # Options: "public", "private", "unlisted"
     category_id: "25"         # News & Politics
-    default_language: "en"
+    default_language: "hi"
     made_for_kids: false
 
   # Metadata templates

@@ -306,25 +306,39 @@ STYLE_PRESETS = {
 # ---------------------------------------------------------------------------
 class ThumbnailGenerator:
     """
-    Generates UPSC-style YouTube thumbnails matching the 'Current Affairs UPSC'
-    channel look:
-      - Dark navy background + tech grid
-      - Gold border frame
-      - Bold yellow/orange headline
-      - Category badge and subtitle
-      - Decorative icon (clock or newspaper)
-      - Bottom branding bar
+    Generates UPSC-style YouTube thumbnails.
+
+    Uses a pre-designed template image (assets/backgrounds/thumbnail_template.png)
+    as the base and overlays the daily date + headline topics on top.
+    Falls back to procedural generation if the template is missing.
     """
 
     DEFAULT_SIZE = (1280, 720)
+    TEMPLATE_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "backgrounds" / "thumbnail_template.png"
 
     def __init__(
         self,
         size: Tuple[int, int] = None,
         channel_name: str = "CURRENT AFFAIRS UPSC",
+        config_path: str = "config/settings.yaml",
     ):
         self.size = size or self.DEFAULT_SIZE
         self.channel_name = channel_name
+
+        # Check config for a custom template image
+        try:
+            import yaml
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+            template_img = config.get("thumbnail", {}).get("template_image", "")
+            if template_img:
+                custom_path = Path(template_img)
+                if custom_path.exists():
+                    self.TEMPLATE_PATH = custom_path
+                    logger.info(f"Using custom thumbnail template: {custom_path}")
+        except Exception:
+            pass
+
         logger.info(f"ThumbnailGenerator initialized: {self.size[0]}x{self.size[1]}")
 
     # ------------------------------------------------------------------
@@ -342,21 +356,20 @@ class ThumbnailGenerator:
         """
         Generate a UPSC-style thumbnail.
 
-        Args:
-            output_path:      Where to save the PNG.
-            title:            Main headline text.
-            date:             Optional date string shown below headline.
-            style:            One of the STYLE_PRESETS keys.
-            background_image: Optional custom BG image path (overrides generated BG).
-            video_path:       Optional video for frame extraction (fallback BG).
-
-        Returns:
-            ThumbnailResult
+        Uses the template image as base and overlays date + headline.
+        Falls back to procedural background if template is missing.
         """
         try:
             preset = STYLE_PRESETS.get(style, STYLE_PRESETS["default"])
-            img = self._build_background(background_image, video_path)
-            img = self._composite_content(img, title, date, preset)
+
+            # Use template image as-is (no text overlay) for clean design
+            if self.TEMPLATE_PATH.exists():
+                img = Image.open(self.TEMPLATE_PATH).convert("RGB").resize(self.size, Image.LANCZOS)
+            else:
+                logger.warning("Template not found, using procedural background")
+                img = self._build_background(background_image, video_path)
+                img = self._composite_content(img, title, date, preset)
+
             self._save(img, output_path)
             logger.info(f"Thumbnail saved: {output_path}")
             return ThumbnailResult(True, str(output_path), self.size)
@@ -391,6 +404,103 @@ class ThumbnailGenerator:
             style = self._detect_style(title)
 
         return self.generate(output_path=output_path, title=title, date=date, style=style)
+
+    # ------------------------------------------------------------------
+    # Template-based thumbnail
+    # ------------------------------------------------------------------
+    def _generate_from_template(self, title: str, date: str = None) -> Image.Image:
+        """
+        Load the pre-designed template image and overlay:
+        - A semi-transparent dark band at the bottom
+        - Today's date (large, gold)
+        - The main headline topic (bold, white/yellow)
+        """
+        w, h = self.size
+
+        # Load and resize template to exact thumbnail dimensions
+        img = Image.open(self.TEMPLATE_PATH).convert("RGBA").resize((w, h), Image.LANCZOS)
+
+        # Create overlay for the bottom text band
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+
+        # Semi-transparent dark band at bottom (covers ~35% of image)
+        band_top = int(h * 0.58)
+        band_height = h - band_top
+        for y_pos in range(band_top, h):
+            # Gradient transparency: more opaque towards bottom
+            progress = (y_pos - band_top) / band_height
+            alpha = int(40 + 180 * progress)  # 40 -> 220
+            overlay_draw.rectangle([0, y_pos, w, y_pos + 1], fill=(0, 0, 0, alpha))
+
+        # Composite the dark band onto the template
+        img = Image.alpha_composite(img, overlay)
+
+        # Now draw text on top
+        draw = ImageDraw.Draw(img)
+
+        # Date text (top of the band area)
+        if date:
+            date_display = date
+        else:
+            from datetime import datetime as dt
+            date_display = dt.now().strftime("%d %B %Y")
+
+        date_font = _load_font(42, bold=True)
+        date_text = date_display.upper()
+        date_w, date_h = _text_size(draw, date_text, date_font)
+        date_x = (w - date_w) // 2
+        date_y = band_top + 20
+
+        _draw_text_outlined(
+            draw, (date_x, date_y), date_text, date_font,
+            fill=GOLD, outline=(0, 0, 0), outline_width=3,
+        )
+
+        # Gold underline below date
+        line_y = date_y + date_h + 8
+        line_margin = 80
+        draw.rectangle([line_margin, line_y, w - line_margin, line_y + 3], fill=GOLD)
+
+        # Headline text (below date, centred, bold)
+        headline_top = line_y + 14
+        available_h = h - headline_top - 20
+
+        for font_size in (48, 42, 36, 32, 26):
+            font = _load_font(font_size, bold=True)
+            max_line_w = w - 140  # margin on both sides
+            words = title.split()
+            lines = []
+            current = ""
+            for word in words:
+                test = (current + " " + word).strip()
+                tw, _ = _text_size(draw, test, font)
+                if tw <= max_line_w:
+                    current = test
+                else:
+                    if current:
+                        lines.append(current)
+                    current = word
+            if current:
+                lines.append(current)
+
+            line_h = font_size + 8
+            total_h = len(lines) * line_h
+            if total_h <= available_h or font_size == 28:
+                break
+
+        text_start_y = headline_top + (available_h - total_h) // 2
+
+        for i, line in enumerate(lines):
+            tw, _ = _text_size(draw, line, font)
+            tx = (w - tw) // 2
+            ty = text_start_y + i * line_h
+            _draw_text_outlined(
+                draw, (tx, ty), line.upper(), font,
+                fill=WHITE, outline=(0, 0, 0), outline_width=3,
+            )
+
+        return img.convert("RGB")
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -57,8 +57,9 @@ The introduction should:
 2. Mention it's a comprehensive daily current affairs session for UPSC preparation
 3. Briefly preview the major topics and their exam relevance
 4. Highlight if any topic is particularly important for upcoming exams
-5. Encourage viewers to take notes
+5. Encourage viewers to take notes and check the comment section for practice questions
 6. Be approximately {intro_words} words
+7. If the language is Hindi, write in Shudh Hindi with common English terms for UPSC topics. Use Devanagari script.
 
 Write only the introduction script, no headers or labels."""
 
@@ -91,6 +92,7 @@ Additional Guidelines:
 - Provide analytical angles for Mains answers
 - Use short, clear sentences suitable for speaking
 - Be educational but engaging
+- If the language is Hindi, write in Shudh Hindi (शुद्ध हिन्दी) mixed with commonly used English terms for UPSC topics (e.g., GDP, RBI, Supreme Court). Use Devanagari script.
 
 Write only the news script, no headers or labels."""
 

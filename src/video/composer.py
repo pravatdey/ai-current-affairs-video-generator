@@ -118,8 +118,8 @@ class VideoComposer:
 
     def compose(
         self,
-        avatar_video_path: str,
-        output_path: str,
+        avatar_video_path: str = None,
+        output_path: str = "",
         headlines: List[str] = None,
         title: str = None,
         date: str = None,
@@ -130,13 +130,14 @@ class VideoComposer:
         # New UPSC educational parameters
         educational_content: EducationalContent = None,
         script_data: Dict[str, Any] = None,
-        generate_pdf_notes: bool = True
+        generate_pdf_notes: bool = True,
+        audio_path: str = None
     ) -> CompositionResult:
         """
         Compose final educational video from components.
 
         Args:
-            avatar_video_path: Path to avatar video
+            avatar_video_path: Path to avatar video (None for slides-only mode)
             output_path: Path to save final video
             headlines: List of headlines to show
             title: Video title
@@ -148,6 +149,7 @@ class VideoComposer:
             educational_content: Educational overlays (key points, images, etc.)
             script_data: Script data with timestamps and UPSC metadata
             generate_pdf_notes: Whether to generate PDF study notes
+            audio_path: Path to audio file (for slides-only mode without avatar)
 
         Returns:
             CompositionResult object with video path and optional PDF path
@@ -155,8 +157,14 @@ class VideoComposer:
         try:
             logger.info("Starting UPSC educational video composition")
 
-            # Load avatar video
-            if not Path(avatar_video_path).exists():
+            # Load avatar video (optional — None for slides-only mode)
+            avatar_clip = None
+            standalone_audio = None
+
+            if avatar_video_path and Path(avatar_video_path).exists():
+                avatar_clip = VideoFileClip(avatar_video_path)
+                duration = avatar_clip.duration
+            elif avatar_video_path:
                 return CompositionResult(
                     success=False,
                     video_path="",
@@ -164,9 +172,19 @@ class VideoComposer:
                     resolution=self.resolution,
                     error=f"Avatar video not found: {avatar_video_path}"
                 )
-
-            avatar_clip = VideoFileClip(avatar_video_path)
-            duration = avatar_clip.duration
+            elif audio_path and Path(audio_path).exists():
+                # Slides-only mode: duration from audio
+                standalone_audio = AudioFileClip(audio_path)
+                duration = standalone_audio.duration
+                logger.info(f"Slides-only mode: duration from audio = {duration:.1f}s")
+            else:
+                return CompositionResult(
+                    success=False,
+                    video_path="",
+                    duration=0,
+                    resolution=self.resolution,
+                    error="No avatar_video_path or audio_path provided"
+                )
 
             # Prepare title and date
             title = title or "UPSC Daily Current Affairs"
@@ -198,7 +216,8 @@ class VideoComposer:
                 headlines=headlines or [],
                 add_ticker=add_ticker,
                 educational_content=educational_content,
-                script_data=script_data
+                script_data=script_data,
+                standalone_audio=standalone_audio
             )
             clips.append(main_clip)
 
@@ -274,7 +293,10 @@ class VideoComposer:
             final_duration = final_video.duration
 
             # Cleanup
-            avatar_clip.close()
+            if avatar_clip:
+                avatar_clip.close()
+            if standalone_audio:
+                standalone_audio.close()
             final_video.close()
 
             logger.info(f"Video composition complete: {final_duration:.1f}s")
@@ -407,15 +429,25 @@ class VideoComposer:
                         mains_paper="GS3" if subject in [SubjectCategory.ECONOMY, SubjectCategory.ENVIRONMENT, SubjectCategory.SCIENCE_TECH] else "GS2"
                     )
 
+                    # Build practice questions list from LLM text
+                    pq_text = segment.get('practice_questions_text', '')
+                    practice_qs = [
+                        line.strip() for line in pq_text.split('\n')
+                        if line.strip()
+                    ] if pq_text else []
+
                     topic = TopicNote(
                         title=segment.get('article_title', 'Topic'),
-                        summary=segment.get('content', '')[:300],
-                        key_points=key_points,
-                        upsc_relevance=upsc_relevance,
+                        trigger_line=segment.get('content', '')[:150],
+                        what_is_it=segment.get('content', '')[:400],
+                        key_provisions=[kp.text for kp in key_points],
+                        sub_sections=[],
+                        challenges=[],
+                        suggestions=[],
                         important_terms=segment.get('important_terms', {}),
-                        practice_questions=[],
-                        related_topics=[],
-                        timestamp=segment.get('timestamp', '')
+                        practice_questions=practice_qs,
+                        upsc_tags=f"{subject_str} | {relevance_str}",
+                        timestamp=segment.get('timestamp', ''),
                     )
                     topics.append(topic)
 
@@ -437,18 +469,27 @@ class VideoComposer:
 
     def _create_main_composition(
         self,
-        avatar_clip: VideoFileClip,
-        headlines: List[str],
-        add_ticker: bool,
+        avatar_clip: VideoFileClip = None,
+        headlines: List[str] = None,
+        add_ticker: bool = True,
         educational_content: EducationalContent = None,
-        script_data: Dict[str, Any] = None
+        script_data: Dict[str, Any] = None,
+        standalone_audio: AudioFileClip = None
     ) -> VideoClip:
-        """Create main video composition with avatar and presentation slides background"""
+        """Create main video composition with optional avatar and presentation slides."""
         width, height = self.resolution
-        duration = avatar_clip.duration
+        headlines = headlines or []
 
-        # Store the original audio from avatar clip
-        original_audio = avatar_clip.audio
+        # Determine duration and audio source
+        if avatar_clip:
+            duration = avatar_clip.duration
+            original_audio = avatar_clip.audio
+        elif standalone_audio:
+            duration = standalone_audio.duration
+            original_audio = standalone_audio
+        else:
+            duration = 60.0
+            original_audio = None
 
         # Initialize educational content if not provided
         if educational_content is None:
@@ -478,44 +519,73 @@ class VideoComposer:
             except Exception as e:
                 logger.warning(f"Failed to generate presentation slides: {e}")
 
-        # ── Resize and position avatar ───────────────────────────────────
-        avatar_config = self.composition_config.get("avatar", {})
-        slides_config = self.composition_config.get("presentation_slides", {})
-        position = avatar_config.get("position", "left")
+        # ── Resize and position avatar (if present) ────────────────────────
+        if avatar_clip:
+            avatar_config = self.composition_config.get("avatar", {})
+            slides_config_pos = self.composition_config.get("presentation_slides", {})
+            position = avatar_config.get("position", "corner")
 
-        if position == "left":
-            # Auto-fill left zone: avatar spans x=0 to content start, bottom-aligned
-            content_start_pct = slides_config.get("content_start_x_pct", 0.33)
-            content_start_x = int(width * content_start_pct)
+            if position == "corner":
+                avatar_scale = avatar_config.get("scale", 0.22)
+                avatar_height = int(height * avatar_scale)
+                avatar_clip = avatar_clip.resize(height=avatar_height)
 
-            # Resize to fill the left zone width
-            avatar_clip = avatar_clip.resize(width=content_start_x)
+                aw, ah = avatar_clip.w, avatar_clip.h
+                side = min(aw, ah)
+                crop_x = (aw - side) // 2
+                crop_y = (ah - side) // 2
+                avatar_clip = avatar_clip.crop(x1=crop_x, y1=crop_y, x2=crop_x + side, y2=crop_y + side)
 
-            # Cap height at frame height
-            if avatar_clip.h > height:
-                avatar_clip = avatar_clip.resize(height=height)
+                use_circular = avatar_config.get("circular", True)
+                if use_circular:
+                    avatar_clip = self._apply_circle_mask(avatar_clip,
+                        border_color=avatar_config.get("border_color", "#00b4ff"),
+                        border_width=avatar_config.get("border_width", 4))
 
-            # Centre horizontally in left zone, bottom-align vertically
-            x_pos = (content_start_x - avatar_clip.w) // 2
-            y_pos = height - avatar_clip.h
-        else:
-            # Centre / right: use manual scale + offsets
-            avatar_scale = avatar_config.get("scale", 0.55)
-            avatar_height = int(height * avatar_scale)
-            avatar_clip = avatar_clip.resize(height=avatar_height)
-            x_offset = avatar_config.get("x_offset", 0)
-            y_offset = avatar_config.get("y_offset", 0)
+                margin = avatar_config.get("margin", 20)
+                corner = avatar_config.get("corner", "bottom-left")
+                if corner == "bottom-left":
+                    x_pos = margin
+                    y_pos = height - avatar_clip.h - margin
+                elif corner == "bottom-right":
+                    x_pos = width - avatar_clip.w - margin
+                    y_pos = height - avatar_clip.h - margin
+                elif corner == "top-left":
+                    x_pos = margin
+                    y_pos = margin
+                elif corner == "top-right":
+                    x_pos = width - avatar_clip.w - margin
+                    y_pos = margin
+                else:
+                    x_pos = margin
+                    y_pos = height - avatar_clip.h - margin
 
-            if position == "right":
-                x_pos = 4 * width // 5 - avatar_clip.w // 2 + x_offset
+            elif position == "left":
+                content_start_pct = slides_config_pos.get("content_start_x_pct", 0.33)
+                content_start_x = int(width * content_start_pct)
+                avatar_clip = avatar_clip.resize(width=content_start_x)
+                if avatar_clip.h > height:
+                    avatar_clip = avatar_clip.resize(height=height)
+                x_pos = (content_start_x - avatar_clip.w) // 2
+                y_pos = height - avatar_clip.h
             else:
-                x_pos = width // 2 - avatar_clip.w // 2 + x_offset
-            y_pos = height // 2 - avatar_clip.h // 2 + y_offset
+                avatar_scale = avatar_config.get("scale", 0.55)
+                avatar_height = int(height * avatar_scale)
+                avatar_clip = avatar_clip.resize(height=avatar_height)
+                x_offset = avatar_config.get("x_offset", 0)
+                y_offset = avatar_config.get("y_offset", 0)
+                if position == "right":
+                    x_pos = 4 * width // 5 - avatar_clip.w // 2 + x_offset
+                else:
+                    x_pos = width // 2 - avatar_clip.w // 2 + x_offset
+                y_pos = height // 2 - avatar_clip.h // 2 + y_offset
 
-        avatar_clip = avatar_clip.set_position((x_pos, y_pos))
+            avatar_clip = avatar_clip.set_position((x_pos, y_pos))
 
-        # ── Layer clips: base_bg -> slides -> avatar -> overlays ─────────
-        layers = [base_background] + slide_clips + [avatar_clip]
+        # ── Layer clips: base_bg -> slides -> (avatar if present) -> overlays
+        layers = [base_background] + slide_clips
+        if avatar_clip:
+            layers.append(avatar_clip)
 
         # Add topic header transitions (shorter when slides are active)
         if script_data:
@@ -749,6 +819,47 @@ class VideoComposer:
         except Exception as e:
             logger.warning(f"Failed to add background music: {e}")
             return video
+
+    def _apply_circle_mask(self, clip, border_color: str = "#00b4ff", border_width: int = 4):
+        """
+        Apply a circular mask + border ring to a video clip.
+
+        Performance-optimized: uses a single static ImageClip mask (not a per-frame
+        callback) so MoviePy doesn't recompute the mask on every frame.
+        The border ring is baked into the same RGBA overlay applied on top.
+        """
+        import numpy as np
+        from moviepy.editor import ImageClip as MIC
+
+        w, h = clip.w, clip.h
+        side = min(w, h)
+        radius = side // 2
+
+        # 2D alpha mask (float in [0, 1]) — kept static, no per-frame callback
+        Y, X = np.ogrid[:h, :w]
+        cx, cy = w // 2, h // 2
+        dist = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2)
+        mask_array = (dist <= radius - border_width).astype(np.float32)
+
+        mask_clip = MIC(mask_array, ismask=True).set_duration(clip.duration)
+        clip = clip.set_mask(mask_clip)
+
+        # Border ring overlay (single static image, cheap to composite)
+        from PIL import Image, ImageDraw
+        border_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(border_img)
+        border_rgb = self._hex_to_rgb(border_color)
+        d.ellipse([1, 1, w - 2, h - 2], outline=(*border_rgb, 255), width=border_width)
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+            border_img.save(f.name)
+            border_clip = ImageClip(f.name).set_duration(clip.duration)
+
+        result = CompositeVideoClip([clip, border_clip], size=(w, h))
+        if clip.audio is not None:
+            result = result.set_audio(clip.audio)
+        return result
 
     def _hex_to_rgb(self, hex_color: str) -> tuple:
         """Convert hex color to RGB tuple"""

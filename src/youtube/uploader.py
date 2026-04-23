@@ -365,6 +365,56 @@ class YouTubeUploader:
 
         return {"error": "Failed to get status"}
 
+    def post_pinned_comment(self, video_id: str, comment_text: str) -> bool:
+        """
+        Post a comment on a video as the channel owner.
+        The comment appears prominently as the first comment.
+
+        Note: YouTube Data API v3 does not have a direct "pin comment" endpoint.
+        The comment is posted by the authenticated channel owner and will appear
+        at the top. For actual pinning, use YouTube Studio manually.
+
+        Args:
+            video_id: YouTube video ID
+            comment_text: Comment text (max 10000 chars)
+
+        Returns:
+            True if comment was posted successfully
+        """
+        youtube = self.auth.get_service()
+        if not youtube:
+            logger.error("Cannot post comment: not authenticated")
+            return False
+
+        try:
+            comment_text = comment_text[:10000]
+
+            response = youtube.commentThreads().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "videoId": video_id,
+                        "topLevelComment": {
+                            "snippet": {
+                                "textOriginal": comment_text
+                            }
+                        }
+                    }
+                }
+            ).execute()
+
+            comment_id = response["snippet"]["topLevelComment"]["id"]
+            logger.info(f"Comment posted on video {video_id}: {comment_id}")
+            logger.info("Note: Please pin this comment manually via YouTube Studio")
+            return True
+
+        except HttpError as e:
+            logger.error(f"Failed to post comment: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to post comment: {e}")
+            return False
+
 
 # CLI interface for testing
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ class ScriptSegment:
     subject_category: str = ""  # Polity, Economy, IR, etc.
     important_terms: Dict[str, str] = field(default_factory=dict)
     timestamp: str = ""  # Video timestamp marker
+    practice_questions_text: str = ""  # Raw LLM output for practice questions
 
 
 @dataclass
@@ -78,6 +79,16 @@ class VideoScript:
                     'timestamp': segment.timestamp
                 })
         return all_points
+
+    def get_all_practice_questions(self) -> str:
+        """Collect all practice questions for YouTube comment."""
+        parts = []
+        for seg in self.segments:
+            if seg.type == 'news' and seg.practice_questions_text:
+                title = seg.article.title if seg.article else 'Topic'
+                header = f"\n{'='*40}\n📌 {title}\n{'='*40}\n"
+                parts.append(header + seg.practice_questions_text)
+        return "\n".join(parts)
 
     def get_timestamps(self) -> List[Dict[str, str]]:
         """Get video timestamps for all segments"""
@@ -136,7 +147,7 @@ class ScriptWriter:
         """
         llm_config = llm_config or {}
         self.llm = LLMClient(provider=llm_provider, **llm_config)
-        self.target_duration = min(target_duration_minutes, 15)  # Maximum 15 minutes
+        self.target_duration = min(target_duration_minutes, 25)  # Maximum 25 minutes
         self.upsc_mode = upsc_mode
 
         # Use UPSC-specific system prompt
@@ -274,10 +285,13 @@ class ScriptWriter:
             news_segment.exam_relevance = exam_relevance
             news_segment.timestamp = f"{int(cumulative_time // 60):02d}:{int(cumulative_time % 60):02d}"
 
-            # Extract key points if in UPSC mode
+            # Extract key points and practice questions if in UPSC mode
             if self.upsc_mode:
                 news_segment.key_points = self._extract_key_points(article)
                 news_segment.important_terms = self._extract_important_terms(article)
+                news_segment.practice_questions_text = self._generate_practice_questions(
+                    article, subject
+                )
 
             script.segments.append(news_segment)
             cumulative_time += news_segment.duration_estimate
@@ -369,6 +383,24 @@ class ScriptWriter:
                     terms[match[0].strip()] = match[1].strip()
 
         return terms
+
+    def _generate_practice_questions(self, article: NewsArticle, subject: str) -> str:
+        """Generate UPSC practice questions for an article using LLM."""
+        try:
+            prompt = PromptTemplates.get_practice_questions_prompt(
+                title=article.title,
+                content=article.content or article.summary or '',
+                subject=subject
+            )
+            response = self.llm.generate(
+                prompt=prompt,
+                max_tokens=800,
+                temperature=0.4
+            )
+            return response.strip()
+        except Exception as e:
+            logger.warning(f"Failed to generate practice questions: {e}")
+            return ""
 
     def _generate_intro(
         self,

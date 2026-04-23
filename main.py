@@ -79,7 +79,17 @@ class VideoGenerationPipeline:
             target_duration_minutes=self.config.get("video", {}).get("duration_max", 10)
         )
         self.tts_manager = TTSManager()
-        self.avatar_generator = AvatarGenerator()
+        self.avatar_enabled = self.config.get("avatar", {}).get("enabled", True)
+        if self.avatar_enabled:
+            avatar_config = self.config.get("avatar", {})
+            default_image = avatar_config.get("default_image", "teacher.jpg")
+            avatar_image_path = f"assets/avatars/{default_image}" if not default_image.startswith("assets/") else default_image
+            self.avatar_generator = AvatarGenerator(
+                method=avatar_config.get("provider", "simple"),
+                avatar_image=avatar_image_path
+            )
+        else:
+            self.avatar_generator = None
         self.video_composer = VideoComposer()
         self.thumbnail_generator = ThumbnailGenerator()
         self.youtube_uploader = YouTubeUploader()
@@ -147,9 +157,10 @@ class VideoGenerationPipeline:
 
             # Get articles for video (scale with duration)
             duration_max = self.config.get("video", {}).get("duration_max", 10)
-            max_articles = max(1, min(4, duration_max // 3))
+            max_articles = max(1, min(8, duration_max // 3))
+            # Always fetch English articles — the script/TTS language is separate
             video_articles = self.scraper.get_articles_for_video(
-                language=language,
+                language="en",
                 max_articles=max_articles
             )
 
@@ -204,26 +215,31 @@ class VideoGenerationPipeline:
             }
             self.logger.info(f"Audio generated: {tts_result.duration:.1f}s")
 
-            # Step 4: Generate avatar video
-            self.logger.info("Step 4: Generating avatar video...")
-            avatar_path = self.video_dir / f"{video_id}_avatar.mp4"
+            # Step 4: Generate avatar video (if enabled)
+            avatar_path = None
+            if self.avatar_enabled and self.avatar_generator:
+                self.logger.info("Step 4: Generating avatar video...")
+                avatar_path = self.video_dir / f"{video_id}_avatar.mp4"
 
-            avatar_result = self.avatar_generator.generate(
-                audio_path=str(audio_path),
-                output_path=str(avatar_path)
-            )
+                avatar_result = self.avatar_generator.generate(
+                    audio_path=str(audio_path),
+                    output_path=str(avatar_path)
+                )
 
-            if not avatar_result.success:
-                results["errors"].append(f"Avatar generation failed: {avatar_result.error}")
-                self.logger.error(f"Avatar failed: {avatar_result.error}")
-                return results
+                if not avatar_result.success:
+                    results["errors"].append(f"Avatar generation failed: {avatar_result.error}")
+                    self.logger.error(f"Avatar failed: {avatar_result.error}")
+                    return results
 
-            results["steps"]["avatar"] = {
-                "duration": avatar_result.duration,
-                "path": str(avatar_path),
-                "method": avatar_result.method
-            }
-            self.logger.info(f"Avatar video generated: {avatar_result.method}")
+                results["steps"]["avatar"] = {
+                    "duration": avatar_result.duration,
+                    "path": str(avatar_path),
+                    "method": avatar_result.method
+                }
+                self.logger.info(f"Avatar video generated: {avatar_result.method}")
+            else:
+                self.logger.info("Step 4: Avatar SKIPPED (disabled in config)")
+                results["steps"]["avatar"] = {"skipped": True}
 
             # Step 5: Compose final video
             self.logger.info("Step 5: Composing final video...")
@@ -281,6 +297,7 @@ class VideoGenerationPipeline:
                         'subject_category': seg.subject_category,
                         'important_terms': seg.important_terms,
                         'timestamp': seg.timestamp,
+                        'practice_questions_text': getattr(seg, 'practice_questions_text', ''),
                     }
                     for seg in script.segments
                 ],
@@ -288,7 +305,8 @@ class VideoGenerationPipeline:
             }
 
             composition_result = self.video_composer.compose(
-                avatar_video_path=str(avatar_path),
+                avatar_video_path=str(avatar_path) if avatar_path else None,
+                audio_path=str(audio_path) if not avatar_path else None,
                 output_path=str(final_video_path),
                 headlines=headlines,
                 title=script.title,
@@ -358,6 +376,23 @@ class VideoGenerationPipeline:
                     if pdf_notes_path:
                         self.logger.info(f"PDF study notes linked in description: {pdf_notes_path}")
 
+                    # Post practice questions as comment
+                    all_questions = script.get_all_practice_questions()
+                    if all_questions:
+                        comment_text = (
+                            "📝 UPSC Practice Questions — Today's Current Affairs\n\n"
+                            f"{all_questions}\n\n"
+                            "💬 Drop your answers in replies! Good luck! 🎯"
+                        )
+                        try:
+                            self.youtube_uploader.post_pinned_comment(
+                                video_id=upload_result.video_id,
+                                comment_text=comment_text
+                            )
+                            self.logger.info("Practice questions posted as YouTube comment")
+                        except Exception as e:
+                            self.logger.warning(f"Failed to post practice questions comment: {e}")
+
                     # Mark articles as used
                     article_ids = [a.id for a in video_articles if hasattr(a, 'id')]
                     if article_ids:
@@ -409,9 +444,9 @@ Examples:
     parser.add_argument(
         "--language", "-l",
         type=str,
-        default="en",
+        default="hi",
         choices=["en", "hi", "ta", "te"],
-        help="Video language (default: en)"
+        help="Video language (default: hi)"
     )
 
     parser.add_argument(
